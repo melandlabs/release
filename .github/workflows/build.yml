@@ -63,7 +63,7 @@ jobs:
           echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
 
       - name: Install Python setuptools for node-gyp
-        run: pip install setuptools
+        run: /opt/homebrew/bin/python3 -m pip install setuptools
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
