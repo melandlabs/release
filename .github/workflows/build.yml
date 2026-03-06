@@ -90,7 +90,7 @@ jobs:
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
-        run: pnpm rebuild better-sqlite3
+        run: pnpm rebuild better-sqlite3 sqlite3
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
@@ -158,7 +158,7 @@ jobs:
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
-        run: pnpm rebuild better-sqlite3
+        run: pnpm rebuild better-sqlite3 sqlite3
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
