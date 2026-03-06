@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
-  repository_dispatch:
-    types: [build-tauri]
   workflow_dispatch:
     inputs:
       tag:
@@ -30,10 +26,8 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.tag }}" != "" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
-            echo "version=" >> $GITHUB_OUTPUT
+            echo "version=0.0.0-test" >> $GITHUB_OUTPUT
           fi
 
   build-tauri-macos:
