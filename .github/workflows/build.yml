@@ -90,7 +90,9 @@ jobs:
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
-        run: pnpm rebuild
+        run: |
+          pnpm rebuild
+          cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
@@ -158,7 +160,9 @@ jobs:
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
-        run: pnpm rebuild
+        run: |
+          pnpm rebuild
+          cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
