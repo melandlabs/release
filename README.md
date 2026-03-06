@@ -13,8 +13,8 @@ Download the latest release from [GitHub Releases](https://github.com/melandlabs
 #### Homebrew
 
 ```bash
-# Add tap
-brew tap melandlabs/lumis
+# Add tap (using this repository)
+brew tap melandlabs/lumis https://github.com/melandlabs/release
 
 # Install
 brew install --cask lumis
