@@ -62,6 +62,9 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
 
+      - name: Install Python setuptools for node-gyp
+        run: pip install setuptools
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
