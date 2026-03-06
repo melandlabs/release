@@ -1,0 +1,91 @@
+name: Update Homebrew Cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to update (e.g., 0.3.0)"
+        required: true
+        type: string
+
+jobs:
+  update-cask:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Calculate SHA256 for ARM64 DMG
+        id: sha_arm
+        run: |
+          URL="https://github.com/melandlabs/release/releases/download/v${{ steps.version.outputs.version }}/Lumis_${{ steps.version.outputs.version }}_aarch64.dmg"
+          echo "Downloading from: $URL"
+          SHA=$(curl -sfL "$URL" | shasum -a 256 | cut -d ' ' -f 1)
+          if [ -z "$SHA" ]; then
+            echo "Error: Failed to download ARM64 DMG"
+            exit 1
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "ARM64 SHA256: $SHA"
+
+      - name: Calculate SHA256 for Intel DMG
+        id: sha_intel
+        run: |
+          URL="https://github.com/melandlabs/release/releases/download/v${{ steps.version.outputs.version }}/Lumis_${{ steps.version.outputs.version }}_x64.dmg"
+          echo "Downloading from: $URL"
+          SHA=$(curl -sfL "$URL" | shasum -a 256 | cut -d ' ' -f 1)
+          if [ -z "$SHA" ]; then
+            echo "Error: Failed to download Intel DMG"
+            exit 1
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Intel SHA256: $SHA"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: homebrew-lumis
+
+      - name: Update Cask file
+        run: |
+          cd homebrew-lumis
+          CASK_FILE="Casks/lumis.rb"
+          VERSION="${{ steps.version.outputs.version }}"
+          ARM_SHA="${{ steps.sha_arm.outputs.sha }}"
+          INTEL_SHA="${{ steps.sha_intel.outputs.sha }}"
+
+          echo "Updating $CASK_FILE"
+          echo "  Version: $VERSION"
+          echo "  ARM64 SHA: $ARM_SHA"
+          echo "  Intel SHA: $INTEL_SHA"
+
+          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" "$CASK_FILE"
+          sed -i "s/sha256 arm:   \"[^\"]*\"/sha256 arm:   \"$ARM_SHA\"/" "$CASK_FILE"
+          sed -i "s/intel: \"[^\"]*\"/intel: \"$INTEL_SHA\"/" "$CASK_FILE"
+
+          echo "Updated content:"
+          head -15 "$CASK_FILE"
+
+      - name: Commit and push
+        run: |
+          cd homebrew-lumis
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/lumis.rb
+          git commit -m "chore: update homebrew cask to v${{ steps.version.outputs.version }}"
+          git push
