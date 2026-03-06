@@ -39,8 +39,6 @@ jobs:
   build-tauri-macos:
     needs: get-version
     if: needs.get-version.outputs.version != ''
-    permissions:
-      contents: write
     runs-on: macos-latest
     steps:
       - name: Checkout release repo
@@ -92,22 +90,25 @@ jobs:
 
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
-        uses: tauri-apps/tauri-action@v0
+        run: pnpm tauri:build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Find DMG file
+        id: dmg
+        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
+        run: echo "path=$(ls Lumis*.dmg)" >> $GITHUB_OUTPUT
+
+      - name: Upload Apple Silicon DMG
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ needs.get-version.outputs.version }}
-          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: --target aarch64-apple-darwin
+          name: lumis-dmg-arm64
+          path: ./lumis/apps/web/src-tauri/target/release/bundle/dmg/${{ steps.dmg.outputs.path }}
 
   build-tauri-windows:
     needs: get-version
@@ -145,15 +146,18 @@ jobs:
 
       - name: Build Tauri app (Windows)
         working-directory: ./lumis/apps/web
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm tauri:build
+
+      - name: Find NSIS installer
+        id: nsis
+        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/nsis
+        run: echo "path=$(ls Lumis*setup.exe)" >> $GITHUB_OUTPUT
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ needs.get-version.outputs.version }}
-          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
+          name: lumis-windows
+          path: ./lumis/apps/web/src-tauri/target/release/bundle/nsis/${{ steps.nsis.outputs.path }}
 
   build-tauri-linux:
     needs: get-version
@@ -200,13 +204,51 @@ jobs:
 
       - name: Build Tauri app (Linux)
         working-directory: ./lumis/apps/web
-        uses: tauri-apps/tauri-action@v0
+        run: pnpm tauri:build
+
+      - name: Find deb file
+        id: deb
+        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/deb
+        run: echo "path=$(ls lumis*.deb)" >> $GITHUB_OUTPUT
+
+      - name: Upload Linux deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumis-linux
+          path: ./lumis/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
+
+  release:
+    needs: [get-version, build-tauri-macos, build-tauri-windows, build-tauri-linux]
+    if: needs.get-version.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Apple Silicon DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: lumis-dmg-arm64
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: lumis-windows
+
+      - name: Download Linux deb
+        uses: actions/download-artifact@v4
+        with:
+          name: lumis-linux
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.get-version.outputs.version }}
+          name: 'Lumis ${{ needs.get-version.outputs.version }}'
+          body: 'See the assets to download this version and install.'
+          draft: true
+          files: |
+            Lumis*.dmg
+            Lumis*setup.exe
+            lumis*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ needs.get-version.outputs.version }}
-          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: --target x86_64-unknown-linux-gnu
