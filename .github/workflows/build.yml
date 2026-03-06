@@ -62,8 +62,10 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
 
-      - name: Install Python setuptools for node-gyp
-        run: /opt/homebrew/bin/python3 -m pip install setuptools
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
