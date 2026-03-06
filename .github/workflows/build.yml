@@ -88,6 +88,10 @@ jobs:
         working-directory: ./lumis
         run: pnpm install --frozen-lockfile
 
+      - name: Create .env file
+        working-directory: ./lumis/apps/web
+        run: cp .env.example .env
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
@@ -148,6 +152,10 @@ jobs:
         working-directory: ./lumis
         run: pnpm install --frozen-lockfile
 
+      - name: Create .env file
+        working-directory: ./lumis/apps/web
+        run: cp .env.example .env
+
       - name: Build Tauri app (Windows)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
@@ -204,6 +212,10 @@ jobs:
       - name: Install dependencies
         working-directory: ./lumis
         run: pnpm install --frozen-lockfile
+
+      - name: Create .env file
+        working-directory: ./lumis/apps/web
+        run: cp .env.example .env
 
       - name: Install Linux build dependencies
         run: |
