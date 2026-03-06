@@ -1,8 +1,8 @@
 cask "lumis" do
-  version "0.3.0-alpha.1"
+  version "0.3.0"
   sha256 "aabbccdd"
 
-  url "https://github.com/melandlabs/release/releases/download/v#{version}/Lumis-#{version}-aarch64.dmg",
+  url "https://github.com/melandlabs/release/releases/download/0.0.0-test/Lumis_0.3.0_aarch64.dmg",
       verified: "github.com/melandlabs/release"
 
   name "Lumis"
