@@ -220,3 +220,32 @@ jobs:
             lumis*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update Homebrew Cask
+        run: |
+          # Find DMG file
+          DMG_FILE=$(ls Lumis*.dmg)
+
+          # Extract version from filename (e.g., Lumis_0.3.0_aarch64.dmg -> 0.3.0)
+          VERSION=$(echo "$DMG_FILE" | sed -E 's/Lumis_([0-9.]+)_aarch64.dmg/\1/')
+
+          # Calculate SHA256
+          SHA256=$(sha256sum "$DMG_FILE" | awk '{print $1}')
+
+          # Update cask file
+          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/lumis.rb
+          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/lumis.rb
+
+          # Commit changes
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add Casks/lumis.rb
+          git commit -m "chore: update Homebrew cask to v$VERSION" || echo "No changes to commit"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
