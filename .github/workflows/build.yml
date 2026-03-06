@@ -98,13 +98,6 @@ jobs:
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
-        env:
-          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          APPLE_ID: "${{ secrets.APPLE_ID }}"
-          APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
-          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
 
       - name: Find DMG file
         id: dmg
@@ -197,11 +190,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: lumis-dmg-arm64
-
-      - name: Download Windows installer
-        uses: actions/download-artifact@v4
-        with:
-          name: lumis-windows
 
       - name: Download Linux deb
         uses: actions/download-artifact@v4
