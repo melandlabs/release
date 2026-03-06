@@ -13,7 +13,7 @@ on:
 
 env:
   NODE_VERSION: '20'
-  RUST_VERSION: '1.75'
+  RUST_VERSION: '1.85'
   LUMIS_REPO: 'melandlabs/lumis'
 
 jobs:
