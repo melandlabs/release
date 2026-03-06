@@ -26,8 +26,10 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.tag }}" != "" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "checkout_ref=refs/tags/${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           else
             echo "version=0.0.0-test" >> $GITHUB_OUTPUT
+            echo "checkout_ref=refs/heads/main" >> $GITHUB_OUTPUT
           fi
 
   build-tauri-macos:
@@ -40,9 +42,9 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
-          git checkout ${{ needs.get-version.outputs.version }}
+          git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -114,9 +116,9 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
-          git checkout ${{ needs.get-version.outputs.version }}
+          git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -163,9 +165,9 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
-          git checkout ${{ needs.get-version.outputs.version }}
+          git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
