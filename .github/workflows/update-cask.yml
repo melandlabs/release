@@ -55,15 +55,8 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "Intel SHA256: $SHA"
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: homebrew-lumis
-
       - name: Update Cask file
         run: |
-          cd homebrew-lumis
           CASK_FILE="Casks/lumis.rb"
           VERSION="${{ steps.version.outputs.version }}"
           ARM_SHA="${{ steps.sha_arm.outputs.sha }}"
@@ -81,11 +74,10 @@ jobs:
           echo "Updated content:"
           head -15 "$CASK_FILE"
 
-      - name: Commit and push to homebrew-tap
+      - name: Commit and push
         run: |
-          cd homebrew-lumis
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/lumis.rb
           git commit -m "chore: update homebrew cask to v${{ steps.version.outputs.version }}"
-          git push https://${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/melandlabs/homebrew-lumis.git main
+          git push
