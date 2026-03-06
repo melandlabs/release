@@ -88,6 +88,10 @@ jobs:
         working-directory: ./lumis
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild native modules for Tauri
+        working-directory: ./lumis
+        run: pnpm rebuild better-sqlite3
+
       - name: Create .env file
         working-directory: ./lumis/apps/web
         run: |
@@ -151,6 +155,10 @@ jobs:
       - name: Install dependencies
         working-directory: ./lumis
         run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules for Tauri
+        working-directory: ./lumis
+        run: pnpm rebuild better-sqlite3
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
