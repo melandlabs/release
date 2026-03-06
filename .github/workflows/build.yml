@@ -117,66 +117,6 @@ jobs:
           name: lumis-dmg-arm64
           path: ./lumis/apps/web/src-tauri/target/release/bundle/dmg/${{ steps.dmg.outputs.path }}
 
-  build-tauri-windows:
-    needs: get-version
-    if: needs.get-version.outputs.version != ''
-    runs-on: windows-latest
-    steps:
-      - name: Checkout release repo
-        uses: actions/checkout@v4
-
-      - name: Clone lumis source code
-        run: |
-          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
-          cd lumis
-          git checkout ${{ needs.get-version.outputs.checkout_ref }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 9
-
-      - name: Add pnpm to PATH
-        run: |
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: Install dependencies
-        working-directory: ./lumis
-        run: pnpm install --frozen-lockfile
-
-      - name: Create .env file
-        working-directory: ./lumis/apps/web
-        run: |
-          cp .env.example .env
-          # Remove POSTGRES_URL to skip database migration in CI
-          sed -i '' '/^POSTGRES_URL=/d' .env
-
-      - name: Build Tauri app (Windows)
-        working-directory: ./lumis/apps/web
-        run: pnpm tauri:build
-
-      - name: Find NSIS installer
-        id: nsis
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/nsis
-        run: echo "path=$(ls Lumis*setup.exe)" >> $GITHUB_OUTPUT
-
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: lumis-windows
-          path: ./lumis/apps/web/src-tauri/target/release/bundle/nsis/${{ steps.nsis.outputs.path }}
-
   build-tauri-linux:
     needs: get-version
     if: needs.get-version.outputs.version != ''
@@ -247,7 +187,7 @@ jobs:
           path: ./lumis/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
 
   release:
-    needs: [get-version, build-tauri-macos, build-tauri-windows, build-tauri-linux]
+    needs: [get-version, build-tauri-macos, build-tauri-linux]
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
@@ -277,7 +217,6 @@ jobs:
           draft: true
           files: |
             Lumis*.dmg
-            Lumis*setup.exe
             lumis*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
