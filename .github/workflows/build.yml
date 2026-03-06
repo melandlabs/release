@@ -91,12 +91,12 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./lumis
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
         run: |
-          pnpm rebuild
+          pnpm rebuild better-sqlite3
           cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
@@ -161,12 +161,12 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./lumis
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Rebuild native modules for Tauri
         working-directory: ./lumis
         run: |
-          pnpm rebuild
+          pnpm rebuild better-sqlite3
           cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
