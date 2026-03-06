@@ -81,11 +81,11 @@ jobs:
           echo "Updated content:"
           head -15 "$CASK_FILE"
 
-      - name: Commit and push
+      - name: Commit and push to homebrew-tap
         run: |
           cd homebrew-lumis
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/lumis.rb
           git commit -m "chore: update homebrew cask to v${{ steps.version.outputs.version }}"
-          git push
+          git push https://${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/melandlabs/homebrew-lumis.git main
