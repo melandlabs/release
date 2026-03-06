@@ -42,7 +42,7 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
@@ -116,7 +116,7 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
@@ -165,7 +165,7 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
+          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
