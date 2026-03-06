@@ -18,6 +18,9 @@ brew tap melandlabs/lumis https://github.com/melandlabs/release
 
 # Install
 brew install --cask lumis
+
+# If you have a manual installation, remove it first:
+# rm -rf /Applications/Lumis.app
 ```
 
 ### Linux
