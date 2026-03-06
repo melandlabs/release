@@ -6,7 +6,14 @@ on:
       - main
     tags:
       - 'v*'
+  repository_dispatch:
+    types: [build-tauri]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g., v0.3.0)'
+        required: false
+        type: string
 
 env:
   NODE_VERSION: '20'
@@ -14,7 +21,24 @@ env:
   LUMIS_REPO: 'melandlabs/lumis'
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          if [ "${{ github.event.inputs.tag }}" != "" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=" >> $GITHUB_OUTPUT
+          fi
+
   build-tauri-macos:
+    needs: get-version
+    if: needs.get-version.outputs.version != ''
     permissions:
       contents: write
     runs-on: macos-latest
@@ -24,8 +48,9 @@ jobs:
 
       - name: Clone lumis source code
         run: |
-          git clone https://github.com/${{ env.LUMIS_REPO }.git lumis
+          git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
+          git checkout ${{ needs.get-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -77,14 +102,16 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Lumis v__VERSION__'
+          tagName: ${{ needs.get-version.outputs.version }}
+          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
           args: --target aarch64-apple-darwin
 
   build-tauri-windows:
+    needs: get-version
+    if: needs.get-version.outputs.version != ''
     runs-on: windows-latest
     steps:
       - name: Checkout release repo
@@ -93,6 +120,8 @@ jobs:
       - name: Clone lumis source code
         run: |
           git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
+          cd lumis
+          git checkout ${{ needs.get-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -120,13 +149,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Lumis v__VERSION__'
+          tagName: ${{ needs.get-version.outputs.version }}
+          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
 
   build-tauri-linux:
+    needs: get-version
+    if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout release repo
@@ -135,6 +166,8 @@ jobs:
       - name: Clone lumis source code
         run: |
           git clone https://github.com/${{ env.LUMIS_REPO }}.git lumis
+          cd lumis
+          git checkout ${{ needs.get-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -171,8 +204,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Lumis v__VERSION__'
+          tagName: ${{ needs.get-version.outputs.version }}
+          releaseName: 'Lumis ${{ needs.get-version.outputs.version }}'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
           prerelease: false
