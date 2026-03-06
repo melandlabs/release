@@ -90,7 +90,10 @@ jobs:
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          # Remove POSTGRES_URL to skip database migration in CI
+          sed -i '/^POSTGRES_URL=/d' .env
 
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
@@ -154,7 +157,10 @@ jobs:
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          # Remove POSTGRES_URL to skip database migration in CI
+          sed -i '/^POSTGRES_URL=/d' .env
 
       - name: Build Tauri app (Windows)
         working-directory: ./lumis/apps/web
@@ -215,7 +221,10 @@ jobs:
 
       - name: Create .env file
         working-directory: ./lumis/apps/web
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          # Remove POSTGRES_URL to skip database migration in CI
+          sed -i '/^POSTGRES_URL=/d' .env
 
       - name: Install Linux build dependencies
         run: |
