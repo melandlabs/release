@@ -117,7 +117,7 @@ jobs:
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "" $KEYCHAIN_PATH
 
-          # Import the Apple certificate
+          # Import Apple certificate
           echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
           security import cert.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
           rm cert.p12
@@ -131,20 +131,7 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Patch optimize-tauri-bundle.sh for CI signing
-        working-directory: ./lumis/apps/web/scripts
-        run: |
-          # Replace ad-hoc signing with Developer ID signing in optimize script
-          SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          sed -i.bak "s/codesign --force --sign -/codesign --force --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
-          sed -i.bak "s/codesign --force --deep --sign -/codesign --force --deep --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
-          # Add timestamp option to all codesign commands
-          sed -i.bak 's/codesign --force/codesign --force --timestamp/g' optimize-tauri-bundle.sh
-          # Verify the changes
-          echo "Patched optimize-tauri-bundle.sh:"
-          grep "codesign" optimize-tauri-bundle.sh || true
-
-      - name: Build Tauri app (Apple Silicon) without notarization
+      - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
         env:
@@ -274,7 +261,7 @@ jobs:
         with:
           tag_name: ${{ needs.get-version.outputs.version }}
           name: 'Lumis ${{ needs.get-version.outputs.version }}'
-          body: 'See the assets to download this version and install.'
+          body: 'See assets to download this version and install.'
           draft: true
           files: |
             Lumis*.dmg
