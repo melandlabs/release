@@ -131,6 +131,21 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Patch optimize-tauri-bundle.sh for CI signing
+        working-directory: ./lumis/apps/web/scripts
+        env:
+          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+        run: |
+          # Replace ad-hoc signing with Developer ID signing in optimize script
+          # This is needed because the script uses --sign - which breaks notarization
+          sed -i.bak "s/codesign --force --sign -/codesign --force --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
+          sed -i.bak "s/codesign --force --deep --sign -/codesign --force --deep --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
+          # Add timestamp option to all codesign commands in the script
+          sed -i.bak 's/codesign --force/codesign --force --timestamp/g' optimize-tauri-bundle.sh
+          # Verify the changes
+          echo "Patched optimize-tauri-bundle.sh:"
+          grep "codesign" optimize-tauri-bundle.sh || true
+
       - name: Build Tauri app (Apple Silicon) without notarization
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
@@ -142,60 +157,6 @@ jobs:
           APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
           APPLE_NOTARIZE: false
-
-      - name: Deep sign all binaries in bundle
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app
-        run: |
-          # Sign all executable files, .node files, and dylib recursively
-          echo "Signing all .node files..."
-          find . -type f -name "*.node" -print0 | xargs -0 codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime --timestamp || true
-
-          echo "Signing all .dylib files..."
-          find . -type f -name "*.dylib" -print0 | xargs -0 codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime --timestamp || true
-
-          echo "Signing all executable files..."
-          find . -type f -perm +111 -print0 | xargs -0 codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime --timestamp || true
-
-      - name: Sign specific problematic binaries
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app
-        run: |
-          # Sign all known problematic binaries in nested directories
-          BINARY_PATHS=(
-            "./Contents/Resources/_up_/cli-bundle/node"
-            "./Contents/Resources/_up_/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
-            "./Contents/Resources/_up_/cli-bundle/vendor/ripgrep/arm64-darwin/ripgrep.node"
-            "./Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/node"
-            "./Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
-            "./Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/ripgrep.node"
-          )
-
-          for BINARY in "${BINARY_PATHS[@]}"; do
-            if [ -f "$BINARY" ]; then
-              echo "Signing: $BINARY"
-              xattr -cr "$BINARY" 2>/dev/null || true
-              codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime --timestamp "$BINARY"
-            else
-              echo "File not found: $BINARY"
-            fi
-          done
-
-      - name: Re-sign entire app bundle
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app
-        run: |
-          # Finally re-sign the entire app bundle
-          echo "Re-signing entire app bundle..."
-          xattr -cr . 2>/dev/null || true
-          codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime --timestamp .
-
-      - name: Rebuild DMG after signing
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/macos
-        run: |
-          # Remove old DMG and rebuild with signed app
-          rm -f dmg/*.dmg
-          # Get app version from package.json
-          VERSION=$(cat ../../../../../package.json | jq -r '.version')
-          # Create new DMG with signed app
-          hdiutil create -volname "Lumis" -srcfolder "Lumis.app" -ov -format UDZO "dmg/Lumis_${VERSION}_aarch64.dmg"
 
       - name: Notarize DMG
         run: |
