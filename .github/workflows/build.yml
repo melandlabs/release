@@ -106,6 +106,31 @@ jobs:
           # Remove POSTGRES_URL to skip database migration in CI
           grep -v '^POSTGRES_URL=' .env > .env.tmp && mv .env.tmp .env
 
+      - name: Import Apple Certificate and Intermediate Certificates
+        env:
+          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+        run: |
+          # Create a new keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+
+          # Import the Apple certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+          security import cert.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
+          rm cert.p12
+
+          # Download and import Apple intermediate certificates (not available in CI)
+          curl -s -o /tmp/AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          curl -s -o /tmp/DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import /tmp/AppleWWDRCAG3.cer -A -k $KEYCHAIN_PATH
+          security import /tmp/DeveloperIDG2CA.cer -A -k $KEYCHAIN_PATH
+
+          # List keychains to ensure system can access certificates
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
