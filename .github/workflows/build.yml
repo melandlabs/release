@@ -142,6 +142,12 @@ jobs:
           APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
 
+      - name: Sign native modules in bundle
+        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app
+        run: |
+          # Sign all .node files to fix notarization issues
+          find . -name "*.node" -type f -exec codesign --force --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" --options runtime {} \;
+
       - name: Find DMG file
         id: dmg
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
