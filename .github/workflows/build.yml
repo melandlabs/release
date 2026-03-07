@@ -133,14 +133,12 @@ jobs:
 
       - name: Patch optimize-tauri-bundle.sh for CI signing
         working-directory: ./lumis/apps/web/scripts
-        env:
-          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
           # Replace ad-hoc signing with Developer ID signing in optimize script
-          # This is needed because the script uses --sign - which breaks notarization
+          SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
           sed -i.bak "s/codesign --force --sign -/codesign --force --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
           sed -i.bak "s/codesign --force --deep --sign -/codesign --force --deep --sign $SIGNING_IDENTITY/g" optimize-tauri-bundle.sh
-          # Add timestamp option to all codesign commands in the script
+          # Add timestamp option to all codesign commands
           sed -i.bak 's/codesign --force/codesign --force --timestamp/g' optimize-tauri-bundle.sh
           # Verify the changes
           echo "Patched optimize-tauri-bundle.sh:"
