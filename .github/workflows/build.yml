@@ -271,9 +271,10 @@ jobs:
 
       - name: Verify deb package exists
         run: |
-          DEB_FILE=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/deb/lumis*.deb 2>/dev/null || echo "")
+          DEB_FILE=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null || echo "")
           if [ -z "$DEB_FILE" ]; then
             echo "❌ Error: deb package not found!"
+            ls -la ./lumis/apps/web/src-tauri/target/release/bundle/ 2>/dev/null || true
             exit 1
           fi
           echo "✅ deb package found: $DEB_FILE"
@@ -281,7 +282,7 @@ jobs:
       - name: Find deb file
         id: deb
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/deb
-        run: echo "path=$(ls lumis*.deb)" >> $GITHUB_OUTPUT
+        run: echo "path=$(ls *.deb)" >> $GITHUB_OUTPUT
 
       - name: Upload Linux deb
         uses: actions/upload-artifact@v4
@@ -315,7 +316,7 @@ jobs:
           draft: true
           files: |
             Lumis*.dmg
-            lumis*.deb
+            *.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
