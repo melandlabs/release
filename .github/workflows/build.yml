@@ -142,6 +142,45 @@ jobs:
           APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
           APPLE_NOTARIZE: false
+          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+
+      - name: Ensure all binaries are signed (fallback)
+        env:
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+        run: |
+          set -e
+          SIGN_ID="${APPLE_SIGNING_IDENTITY}"
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
+
+          echo "🔐 Fallback: Signing all binaries in $APP_BUNDLE"
+
+          # Remove extended attributes from all binaries
+          find "$APP_BUNDLE" -type f \( -name "*.node" -o -name "*.dylib" \) -print0 | xargs -0 xattr -cr 2>/dev/null || true
+
+          # Sign all .node files with Developer ID, timestamp, and hardened runtime
+          echo "  Signing .node files..."
+          find "$APP_BUNDLE" -type f -name "*.node" -print0 | xargs -0 codesign --force --sign "$SIGN_ID" --options runtime --timestamp || true
+
+          # Sign all .dylib files with Developer ID, timestamp, and hardened runtime
+          echo "  Signing .dylib files..."
+          find "$APP_BUNDLE" -type f -name "*.dylib" -print0 | xargs -0 codesign --force --sign "$SIGN_ID" --options runtime --timestamp || true
+
+          # Sign specific problematic executables with Developer ID, timestamp, and hardened runtime
+          echo "  Signing specific executables..."
+          for exe in \
+            "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node" \
+            "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/vendor/ripgrep/arm64-darwin/rg" \
+            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/node" \
+            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
+          do
+            if [ -f "$exe" ]; then
+              echo "    Signing: $exe"
+              xattr -cr "$exe" 2>/dev/null || true
+              codesign --force --sign "$SIGN_ID" --options runtime --timestamp "$exe"
+            fi
+          done
+
+          echo "✅ Fallback signing complete"
 
       - name: Notarize DMG
         run: |
@@ -227,6 +266,9 @@ jobs:
       - name: Build Tauri app (Linux)
         working-directory: ./lumis/apps/web
         run: pnpm tauri:build
+        env:
+          # Only build deb package to avoid linuxdeploy AppImage issues
+          TAURI_BUNDLE_TARGET: deb
 
       - name: Find deb file
         id: deb
