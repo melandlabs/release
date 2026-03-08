@@ -141,7 +141,8 @@ jobs:
           APPLE_ID: "${{ secrets.APPLE_ID }}"
           APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
           APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          APPLE_NOTARIZE: false
+          # Tauri v2 uses TAURI_SKIP_NOTARIZATION to skip auto-notarization
+          TAURI_SKIP_NOTARIZATION: 1
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 
       - name: Ensure all binaries are signed (fallback)
@@ -268,7 +269,7 @@ jobs:
         run: pnpm tauri:build
         env:
           # Only build deb package to avoid linuxdeploy AppImage issues
-          TAURI_BUNDLE_TARGET: deb
+          TAURI_BUNDLE_TARGETS: deb
 
       - name: Find deb file
         id: deb
