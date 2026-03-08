@@ -1,6 +1,6 @@
 cask "lumis" do
   version "0.3.0"
-  sha256 "f9b559ee9df9ef7067c5c57d2b097c9b09d55bff1450621bf1b5c0cb04aa7d1e"
+  sha256 "c7cbead4bc04726e3297479d7b0a42fed40299ef1a3965cd6f7daa122786b797"
 
   url "https://github.com/melandlabs/release/releases/download/0.0.0-test/Lumis_0.3.0_aarch64.dmg",
       verified: "github.com/melandlabs/release"
