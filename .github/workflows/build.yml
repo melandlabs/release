@@ -263,12 +263,11 @@ jobs:
 
       - name: Build Tauri app (Linux)
         working-directory: ./lumis/apps/web
-        run: |
-          # Build with error tolerance - AppImage may fail but deb should succeed
-          pnpm tauri:build || true
+        run: pnpm tauri:build
         env:
           # Try to build only deb to avoid AppImage issues
           TAURI_BUNDLE_TARGET: deb
+        continue-on-error: true
 
       - name: Verify deb package exists
         run: |
