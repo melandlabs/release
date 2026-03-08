@@ -138,11 +138,8 @@ jobs:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          APPLE_ID: "${{ secrets.APPLE_ID }}"
-          APPLE_PASSWORD: "${{ secrets.APPLE_PASSWORD }}"
-          APPLE_TEAM_ID: "${{ secrets.APPLE_TEAM_ID }}"
-          # Tauri v2 uses TAURI_SKIP_NOTARIZATION to skip auto-notarization
-          TAURI_SKIP_NOTARIZATION: 1
+          # Don't set APPLE_ID/APPLE_PASSWORD to prevent Tauri from auto-notarizing
+          # Notarization will be done manually in a separate step
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 
       - name: Ensure all binaries are signed (fallback)
@@ -266,10 +263,21 @@ jobs:
 
       - name: Build Tauri app (Linux)
         working-directory: ./lumis/apps/web
-        run: pnpm tauri:build
+        run: |
+          # Build with error tolerance - AppImage may fail but deb should succeed
+          pnpm tauri:build || true
         env:
-          # Only build deb package to avoid linuxdeploy AppImage issues
-          TAURI_BUNDLE_TARGETS: deb
+          # Try to build only deb to avoid AppImage issues
+          TAURI_BUNDLE_TARGET: deb
+
+      - name: Verify deb package exists
+        run: |
+          DEB_FILE=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/deb/lumis*.deb 2>/dev/null || echo "")
+          if [ -z "$DEB_FILE" ]; then
+            echo "❌ Error: deb package not found!"
+            exit 1
+          fi
+          echo "✅ deb package found: $DEB_FILE"
 
       - name: Find deb file
         id: deb
