@@ -151,6 +151,7 @@ jobs:
           APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
 
           echo "🔐 Fallback: Signing all binaries in $APP_BUNDLE"
+          echo "  Using SIGN_ID: $SIGN_ID"
 
           # Remove extended attributes from all binaries
           find "$APP_BUNDLE" -type f \( -name "*.node" -o -name "*.dylib" \) -print0 | xargs -0 xattr -cr 2>/dev/null || true
@@ -186,7 +187,7 @@ jobs:
           do
             if [ -f "$file" ]; then
               echo "    Verifying: $file"
-              codesign -dv "$file" 2>&1 | head -5
+              codesign -dv "$file" 2>&1 | head -10
             fi
           done
 
