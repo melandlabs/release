@@ -194,8 +194,8 @@ jobs:
 
           echo "$OUTPUT"
 
-          # Extract submission ID and get detailed log
-          SUBMISSION_ID=$(echo "$OUTPUT" | grep -oP 'id: \K[a-f0-9-]+' | head -1)
+          # Extract submission ID and get detailed log (use BSD-compatible grep)
+          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
           if [ -n "$SUBMISSION_ID" ]; then
             echo "Fetching detailed log for submission: $SUBMISSION_ID"
             xcrun notarytool log "$SUBMISSION_ID" \
