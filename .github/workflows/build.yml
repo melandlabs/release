@@ -193,15 +193,6 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
-      - name: Rebuild DMG with signed binaries
-        run: |
-          # Remove old DMG
-          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg
-
-          # Rebuild DMG using Tauri (which will use the already signed app bundle)
-          cd ./lumis/apps/web
-          pnpm tauri build --bundles dmg
-
       - name: Sign app bundle with Developer ID (deep)
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
@@ -211,6 +202,15 @@ jobs:
           # Use --deep to recursively sign all nested binaries
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
           echo "✅ App bundle deep signed"
+
+      - name: Rebuild DMG with signed binaries
+        run: |
+          # Remove old DMG (the app bundle is now properly signed)
+          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg
+
+          # Rebuild DMG using Tauri (which will use the already signed app bundle)
+          cd ./lumis/apps/web
+          pnpm tauri build --bundles dmg
 
       - name: Sign DMG with Developer ID
         env:
