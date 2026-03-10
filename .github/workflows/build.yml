@@ -190,10 +190,30 @@ jobs:
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
             --wait
 
+      - name: Staple DMG
+        run: |
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          echo "Stapling: $DMG_PATH"
+          xcrun stapler staple "$DMG_PATH"
+
+      - name: Verify Staple
+        run: |
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          xcrun stapler validate "$DMG_PATH"
+
       - name: Find DMG file
         id: dmg
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
         run: echo "path=$(ls Lumis*.dmg)" >> $GITHUB_OUTPUT
+
+      - name: Rename DMG with platform
+        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
+        run: |
+          ORIGINAL=$(ls Lumis*.dmg)
+          # Extract version and arch, add macOS platform
+          NEW=$(echo "$ORIGINAL" | sed 's/Lumis_\(.*\)_aarch64\.dmg/Lumis_\1_macOS_aarch64.dmg/')
+          mv "$ORIGINAL" "$NEW"
+          echo "path=$NEW" >> $GITHUB_OUTPUT
 
       - name: Upload Apple Silicon DMG
         uses: actions/upload-artifact@v4
@@ -326,10 +346,10 @@ jobs:
       - name: Update Homebrew Cask
         run: |
           # Find DMG file
-          DMG_FILE=$(ls Lumis*.dmg)
+          DMG_FILE=$(ls Lumis*macOS*.dmg)
 
-          # Extract version from filename (e.g., Lumis_0.3.0_aarch64.dmg -> 0.3.0)
-          VERSION=$(echo "$DMG_FILE" | sed -E 's/Lumis_([0-9.]+)_aarch64.dmg/\1/')
+          # Extract version from filename (e.g., Lumis_0.3.0_macOS_aarch64.dmg -> 0.3.0)
+          VERSION=$(echo "$DMG_FILE" | sed -E 's/Lumis_([0-9.]+)_macOS_aarch64.dmg/\1/')
 
           # Calculate SHA256
           SHA256=$(sha256sum "$DMG_FILE" | awk '{print $1}')
