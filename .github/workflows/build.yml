@@ -184,11 +184,31 @@ jobs:
         run: |
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
           echo "Notarizing: $DMG_PATH"
-          xcrun notarytool submit "$DMG_PATH" \
+
+          # Submit and capture output
+          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_PASSWORD }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --wait
+            --wait 2>&1)
+
+          echo "$OUTPUT"
+
+          # Extract submission ID and get detailed log
+          SUBMISSION_ID=$(echo "$OUTPUT" | grep -oP 'id: \K[a-f0-9-]+' | head -1)
+          if [ -n "$SUBMISSION_ID" ]; then
+            echo "Fetching detailed log for submission: $SUBMISSION_ID"
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --password "${{ secrets.APPLE_PASSWORD }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || true
+          fi
+
+          # Exit with error if status is not success
+          if echo "$OUTPUT" | grep -q "status: Invalid"; then
+            echo "❌ Notarization failed!"
+            exit 1
+          fi
 
       - name: Staple DMG
         run: |
