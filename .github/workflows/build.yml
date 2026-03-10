@@ -203,14 +203,19 @@ jobs:
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
           echo "✅ App bundle deep signed"
 
-      - name: Rebuild DMG with signed binaries
+      - name: Create DMG manually from signed app bundle
         run: |
-          # Remove old DMG (the app bundle is now properly signed)
+          # Remove old DMG
           rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg
 
-          # Rebuild DMG using Tauri (which will use the already signed app bundle)
-          cd ./lumis/apps/web
-          pnpm tauri build --bundles dmg
+          # Get the app bundle path
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
+          DMG_PATH="./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis_0.3.0_aarch64.dmg"
+
+          # Create DMG from the signed app bundle using hdiutil
+          hdiutil create -volname "Lumis" -fs HFS+ -srcfolder "$APP_BUNDLE" "$DMG_PATH"
+
+          echo "✅ DMG created from signed app bundle"
 
       - name: Sign DMG with Developer ID
         env:
