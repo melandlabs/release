@@ -178,6 +178,18 @@ jobs:
             fi
           done
 
+          # Verify signatures
+          echo "  Verifying signatures..."
+          for file in \
+            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/node" \
+            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
+          do
+            if [ -f "$file" ]; then
+              echo "    Verifying: $file"
+              codesign -dv "$file" 2>&1 | head -5
+            fi
+          done
+
           echo "✅ Fallback signing complete"
 
       - name: Sign DMG with Developer ID
