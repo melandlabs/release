@@ -180,6 +180,16 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
+      - name: Sign DMG with Developer ID
+        env:
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+        run: |
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          echo "Signing DMG with Developer ID: $DMG_PATH"
+          # Re-sign the DMG with Developer ID certificate
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$DMG_PATH"
+          echo "✅ DMG re-signed"
+
       - name: Notarize DMG
         run: |
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
