@@ -202,6 +202,16 @@ jobs:
           cd ./lumis/apps/web
           pnpm tauri build --bundles dmg
 
+      - name: Sign app bundle with Developer ID (deep)
+        env:
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+        run: |
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
+          echo "Deep signing app bundle: $APP_BUNDLE"
+          # Use --deep to recursively sign all nested binaries
+          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
+          echo "✅ App bundle deep signed"
+
       - name: Sign DMG with Developer ID
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
