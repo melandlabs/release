@@ -193,6 +193,15 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
+      - name: Rebuild DMG with signed binaries
+        run: |
+          # Remove old DMG
+          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg
+
+          # Rebuild DMG using Tauri (which will use the already signed app bundle)
+          cd ./lumis/apps/web
+          pnpm tauri build --bundles dmg
+
       - name: Sign DMG with Developer ID
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
