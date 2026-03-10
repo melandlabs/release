@@ -279,19 +279,18 @@ jobs:
           done
 
           echo "⚠️ Notarization timed out after $((MAX_ATTEMPTS * 30)) seconds, checking final status..."
-          FINAL_STATUS=$(xcrun notarytool list \
+          # Try to get the log which contains the final status
+          FINAL_LOG=$(xcrun notarytool log "$SUBMISSION_ID" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 | grep "$SUBMISSION_ID" || echo "")
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || echo "")
 
-          if echo "$FINAL_STATUS" | grep -q "Accepted"; then
+          echo "$FINAL_LOG"
+
+          if echo "$FINAL_LOG" | grep -q '"status": "Accepted"'; then
             echo "✅ Notarization accepted!"
           else
-            echo "❌ Notarization may have failed, fetching logs..."
-            xcrun notarytool log "$SUBMISSION_ID" \
-              --apple-id "${{ secrets.APPLE_ID }}" \
-              --password "${{ secrets.APPLE_PASSWORD }}" \
-              --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || true
+            echo "❌ Notarization may have failed"
             exit 1
           fi
 
