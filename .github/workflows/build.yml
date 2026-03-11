@@ -138,6 +138,7 @@ jobs:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          SKIP_SIGNING: "true"
           # Don't set APPLE_ID/APPLE_PASSWORD to prevent Tauri from auto-notarizing
           # Notarization will be done manually in a separate step
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
