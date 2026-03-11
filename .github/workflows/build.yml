@@ -213,9 +213,8 @@ jobs:
           DMG_PATH="./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis_0.3.0_aarch64.dmg"
 
           # Create DMG from the signed app bundle using hdiutil
-          # Use UDZO (compressed) and -ov (overwrite) to match Tauri behavior
-          # Add -layout to show "Drag to Applications" prompt
-          hdiutil create -volname "Lumis" -fs HFS+ -srcfolder "$APP_BUNDLE" -ov -layout "UDBZ" "$DMG_PATH"
+          # Use UDZO (compressed) format to match Tauri behavior
+          hdiutil create -volname "Lumis" -fs HFS+ -srcfolder "$APP_BUNDLE" -format UDZO "$DMG_PATH"
 
           echo "✅ DMG created from signed app bundle"
 
