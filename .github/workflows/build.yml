@@ -407,7 +407,8 @@ jobs:
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/deb
         run: |
           ORIGINAL=$(ls *.deb)
-          NEW=$(echo "$ORIGINAL" | sed 's/Lumis_\(.*\)/Lumis_\1_linux/')
+          # Rename Lumis_0.3.0_amd64.deb to Lumis_0.3.0_linux_amd64.deb
+          NEW=$(echo "$ORIGINAL" | sed 's/_amd64/_linux_amd64/')
           mv "$ORIGINAL" "$NEW"
           echo "path=$NEW" >> $GITHUB_OUTPUT
 
