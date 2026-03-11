@@ -1,6 +1,6 @@
 cask "lumis" do
   version "0.3.0"
-  sha256 "9c9877a957cb0bebe2c5616d43260c643269faab8d588ddf0f4b253c70a2838f"
+  sha256 "d80e5f3a3188c1e04cf4d1298c0895cb63d715157c523130a7db4acbef99cef3"
 
   url "https://github.com/melandlabs/release/releases/download/0.0.0-test/Lumis_0.3.0_macOS_aarch64.dmg",
       verified: "github.com/melandlabs/release"
