@@ -214,7 +214,8 @@ jobs:
 
           # Create DMG from the signed app bundle using hdiutil
           # Use UDZO (compressed) and -ov (overwrite) to match Tauri behavior
-          hdiutil create -volname "Lumis" -fs HFS+ -srcfolder "$APP_BUNDLE" -ov "$DMG_PATH"
+          # Add -layout to show "Drag to Applications" prompt
+          hdiutil create -volname "Lumis" -fs HFS+ -srcfolder "$APP_BUNDLE" -ov -layout "UDBZ" "$DMG_PATH"
 
           echo "✅ DMG created from signed app bundle"
 
