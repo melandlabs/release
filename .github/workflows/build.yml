@@ -305,25 +305,23 @@ jobs:
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
           xcrun stapler validate "$DMG_PATH"
 
-      - name: Find DMG file
+      - name: Find and rename DMG file
         id: dmg
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
-        run: echo "path=$(ls Lumis*.dmg)" >> $GITHUB_OUTPUT
-
-      - name: Rename DMG with platform
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
         run: |
+          # Get original filename
           ORIGINAL=$(ls Lumis*.dmg)
           # Extract version and arch, add macOS platform
           NEW=$(echo "$ORIGINAL" | sed 's/Lumis_\(.*\)_aarch64\.dmg/Lumis_\1_macOS_aarch64.dmg/')
           mv "$ORIGINAL" "$NEW"
           echo "path=$NEW" >> $GITHUB_OUTPUT
+          echo "full_path=$(pwd)/$NEW" >> $GITHUB_OUTPUT
 
       - name: Upload Apple Silicon DMG
         uses: actions/upload-artifact@v4
         with:
           name: lumis-dmg-arm64
-          path: ./lumis/apps/web/src-tauri/target/release/bundle/dmg/${{ steps.dmg.outputs.path }}
+          path: ${{ steps.dmg.outputs.full_path }}
 
   build-tauri-linux:
     needs: get-version
