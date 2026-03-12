@@ -36,7 +36,7 @@ jobs:
   build-tauri-macos:
     needs: get-version
     if: needs.get-version.outputs.version != ''
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -271,9 +271,6 @@ jobs:
             -fs HFS+ \
             -srcfolder "$TEMP_DMG_DIR" \
             -format UDZO \
-            -layout SPUD \
-            -window-pos 100 100 \
-            -window-size 600 400 \
             "$DMG_PATH"
 
           # Clean up temp directory
