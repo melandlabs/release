@@ -203,8 +203,9 @@ jobs:
           find "$APP_BUNDLE" -type f \( -name "*.node" -o -name "*.dylib" \) -print0 | xargs -0 xattr -cr 2>/dev/null || true
 
           # Sign all .node files with Developer ID, timestamp, and hardened runtime
+          # But skip cli-bundle/node which is already signed by bundle-runtime.sh
           echo "  Signing .node files..."
-          find "$APP_BUNDLE" -type f -name "*.node" -print0 | xargs -0 codesign --force --sign "$SIGN_ID" --options runtime --timestamp || true
+          find "$APP_BUNDLE" -type f -name "*.node" -not -path "*/cli-bundle/*" -print0 | xargs -0 codesign --force --sign "$SIGN_ID" --options runtime --timestamp || true
 
           # Sign all .dylib files with Developer ID, timestamp, and hardened runtime
           echo "  Signing .dylib files..."
