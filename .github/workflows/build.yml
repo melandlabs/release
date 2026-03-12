@@ -212,11 +212,10 @@ jobs:
           find "$APP_BUNDLE" -type f -name "*.dylib" -print0 | xargs -0 codesign --force --sign "$SIGN_ID" --options runtime --timestamp || true
 
           # Sign specific problematic executables with Developer ID, timestamp, and hardened runtime
+          # Skip cli-bundle/* as they are already signed by bundle-runtime.sh
           echo "  Signing specific executables..."
           for exe in \
-            "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node" \
             "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/vendor/ripgrep/arm64-darwin/rg" \
-            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/node" \
             "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
           do
             if [ -f "$exe" ]; then
@@ -229,7 +228,6 @@ jobs:
           # Verify signatures
           echo "  Verifying signatures..."
           for file in \
-            "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/node" \
             "$APP_BUNDLE/Contents/Resources/_up_/.next/standalone/apps/web/cli-bundle/vendor/ripgrep/arm64-darwin/rg"
           do
             if [ -f "$file" ]; then
@@ -240,15 +238,18 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
-      - name: Sign app bundle with Developer ID (deep)
+      - name: Sign app bundle with Developer ID
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
           APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
-          echo "Deep signing app bundle: $APP_BUNDLE"
-          # Use --deep to recursively sign all nested binaries
-          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          echo "✅ App bundle deep signed"
+          echo "Signing app bundle: $APP_BUNDLE"
+          # Sign the main app bundle (but not recursively to avoid re-signing cli-bundle/node)
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
+          # Re-apply ad-hoc signing to cli-bundle/node after main signing
+          # because it must keep its original signature to run properly
+          codesign --force --sign - --options runtime "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node"
+          echo "✅ App bundle signed"
 
       - name: Create DMG manually from signed app bundle
         run: |
