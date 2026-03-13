@@ -41,7 +41,7 @@ jobs:
       - name: Checkout release repo
         uses: actions/checkout@v4
 
-      - name: Clone lumis source code
+      - name: Clone alloomi source code
         run: |
           git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
@@ -238,18 +238,18 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
-      - name: Sign app bundle with Developer ID
+      - name: Sign app bundle with Developer ID (deep)
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
           APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
-          echo "Signing app bundle: $APP_BUNDLE"
-          # Sign the main app bundle (but not recursively to avoid re-signing cli-bundle/node)
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          # Re-apply ad-hoc signing to cli-bundle/node after main signing
-          # because it must keep its original signature to run properly
+          echo "Deep signing app bundle: $APP_BUNDLE"
+          # Use --deep to recursively sign all nested binaries
+          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
+          # Restore ad-hoc signing for cli-bundle/node after deep signing
+          # This is required for Node.js to run properly
           codesign --force --sign - --options runtime "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node"
-          echo "✅ App bundle signed"
+          echo "✅ App bundle deep signed"
 
       - name: Create DMG manually from signed app bundle
         run: |
