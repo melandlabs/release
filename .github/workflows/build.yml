@@ -535,7 +535,7 @@ jobs:
 
   release:
     needs: [get-version, build-tauri-macos, build-tauri-linux]
-    if: needs.get-version.outputs.version != '' && (needs.build-tauri-macos.result == 'success' || needs.build-tauri-macos.result == 'skipped' || needs.build-tauri-macos.result == 'failure')
+    if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
