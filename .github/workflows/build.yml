@@ -364,6 +364,7 @@ jobs:
           fi
 
       - name: Staple DMG
+        continue-on-error: true
         run: |
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
@@ -534,7 +535,7 @@ jobs:
 
   release:
     needs: [get-version, build-tauri-macos, build-tauri-linux]
-    if: needs.get-version.outputs.version != ''
+    if: needs.get-version.outputs.version != '' && (needs.build-tauri-macos.result == 'success' || needs.build-tauri-macos.result == 'skipped' || needs.build-tauri-macos.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       contents: write
