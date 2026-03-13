@@ -292,6 +292,7 @@ jobs:
 
       - name: Notarize DMG
         timeout-minutes: 60
+        continue-on-error: true
         run: |
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Notarizing: $DMG_PATH"
