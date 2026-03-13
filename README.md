@@ -1,6 +1,6 @@
-# Lumis
+# Alloomi
 
-Lumis is an AI-powered IM router and chat agent with multi-platform integration.
+Alloomi is an AI-powered IM router and chat agent with multi-platform integration.
 
 ## Installation
 
@@ -14,13 +14,13 @@ Download the latest release from [GitHub Releases](https://github.com/melandlabs
 
 ```bash
 # Add tap (using this repository)
-brew tap melandlabs/lumis https://github.com/melandlabs/release
+brew tap melandlabs/alloomi https://github.com/melandlabs/release
 
 # Install
-brew install --cask lumis
+brew install --cask alloomi
 
 # If you have a manual installation, remove it first:
-# rm -rf /Applications/Lumis.app
+# rm -rf /Applications/Alloomi.app
 ```
 
 ### Linux
@@ -29,10 +29,10 @@ brew install --cask lumis
 
 ```bash
 # Download .deb package from releases
-sudo dpkg -i lumis_*.deb
+sudo dpkg -i alloomi_*.deb
 sudo apt-get install -f  # Install dependencies
 ```
 
 ## Development
 
-This repository contains the CI/CD configuration for building and releasing Lumis. The source code is in the [lumis](https://github.com/melandlabs/lumis) repository.
+This repository contains the CI/CD configuration for building and releasing Alloomi. The source code is in the [alloomi](https://github.com/melandlabs/alloomi) repository.

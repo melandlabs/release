@@ -106,8 +106,8 @@ jobs:
           ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
 
           # Cloud API Configuration for Tauri Desktop App
-          CLOUD_API_URL=https://app.uselumis.ai
-          NEXT_PUBLIC_CLOUD_API_URL=https://app.uselumis.ai
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
 
           # Local development URL (for Tauri mode)
           NEXT_PUBLIC_APP_URL=http://localhost:3415
@@ -138,7 +138,7 @@ jobs:
           ROLE_OVERLAY_REMOTE_WORKER=1
           ROLE_OVERLAY_SALES_BIZDEV=1
 
-          CLAUDE_CODE_TMPDIR=$HOME/.cache/lumis-tmp
+          CLAUDE_CODE_TMPDIR=$HOME/.cache/alloomi-tmp
 
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
@@ -194,7 +194,7 @@ jobs:
         run: |
           set -e
           SIGN_ID="${APPLE_SIGNING_IDENTITY}"
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
 
           echo "🔐 Fallback: Signing all binaries in $APP_BUNDLE"
           echo "  Using SIGN_ID: $SIGN_ID"
@@ -242,7 +242,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Deep signing app bundle: $APP_BUNDLE"
           # Use --deep to recursively sign all nested binaries
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
@@ -254,11 +254,11 @@ jobs:
       - name: Create DMG manually from signed app bundle
         run: |
           # Remove old DMG
-          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg
+          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
           # Get the app bundle path
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Lumis.app"
-          DMG_PATH="./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis_0.3.0_aarch64.dmg"
+          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          DMG_PATH="./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.0_aarch64.dmg"
 
           # Create a temporary directory for DMG contents
           TEMP_DMG_DIR=$(mktemp -d)
@@ -269,7 +269,7 @@ jobs:
 
           # Create DMG from the temp directory with proper layout
           # This creates a DMG with the app on the left and Applications folder on the right
-          hdiutil create -volname "Lumis" \
+          hdiutil create -volname "Alloomi" \
             -fs HFS+ \
             -srcfolder "$TEMP_DMG_DIR" \
             -format UDZO \
@@ -284,7 +284,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Signing DMG with Developer ID: $DMG_PATH"
           # Re-sign the DMG with Developer ID certificate
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$DMG_PATH"
@@ -293,7 +293,7 @@ jobs:
       - name: Notarize DMG
         timeout-minutes: 60
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Notarizing: $DMG_PATH"
 
           # Verify DMG exists and check its signature
@@ -364,13 +364,13 @@ jobs:
 
       - name: Staple DMG
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
           xcrun stapler staple "$DMG_PATH"
 
       - name: Verify Staple
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
+          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           xcrun stapler validate "$DMG_PATH"
 
       - name: Find and rename DMG file
@@ -378,9 +378,9 @@ jobs:
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
         run: |
           # Get original filename
-          ORIGINAL=$(ls Lumis*.dmg)
+          ORIGINAL=$(ls Alloomi*.dmg)
           # Extract version and arch, add macOS platform
-          NEW=$(echo "$ORIGINAL" | sed 's/Lumis_\(.*\)_aarch64\.dmg/Lumis_\1_macOS_aarch64.dmg/')
+          NEW=$(echo "$ORIGINAL" | sed 's/Alloomi_\(.*\)_aarch64\.dmg/Alloomi_\1_macOS_aarch64.dmg/')
           mv "$ORIGINAL" "$NEW"
           echo "path=$NEW" >> $GITHUB_OUTPUT
           echo "full_path=$(pwd)/$NEW" >> $GITHUB_OUTPUT
@@ -388,7 +388,7 @@ jobs:
       - name: Upload Apple Silicon DMG
         uses: actions/upload-artifact@v4
         with:
-          name: lumis-dmg-arm64
+          name: alloomi-dmg-arm64
           path: ${{ steps.dmg.outputs.full_path }}
 
   build-tauri-linux:
@@ -399,7 +399,7 @@ jobs:
       - name: Checkout release repo
         uses: actions/checkout@v4
 
-      - name: Clone lumis source code
+      - name: Clone alloomi source code
         run: |
           git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
           cd lumis
@@ -446,8 +446,8 @@ jobs:
           ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
 
           # Cloud API Configuration for Tauri Desktop App
-          CLOUD_API_URL=https://app.uselumis.ai
-          NEXT_PUBLIC_CLOUD_API_URL=https://app.uselumis.ai
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
 
           # Local development URL (for Tauri mode)
           NEXT_PUBLIC_APP_URL=http://localhost:3415
@@ -478,7 +478,7 @@ jobs:
           ROLE_OVERLAY_REMOTE_WORKER=1
           ROLE_OVERLAY_SALES_BIZDEV=1
 
-          CLAUDE_CODE_TMPDIR=$HOME/.cache/lumis-tmp
+          CLAUDE_CODE_TMPDIR=$HOME/.cache/alloomi-tmp
 
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
@@ -520,7 +520,7 @@ jobs:
         working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/deb
         run: |
           ORIGINAL=$(ls *.deb)
-          # Rename Lumis_0.3.0_amd64.deb to Lumis_0.3.0_linux_amd64.deb
+          # Rename Alloomi_0.3.0_amd64.deb to Alloomi_0.3.0_linux_amd64.deb
           NEW=$(echo "$ORIGINAL" | sed 's/_amd64/_linux_amd64/')
           mv "$ORIGINAL" "$NEW"
           echo "path=$NEW" >> $GITHUB_OUTPUT
@@ -528,7 +528,7 @@ jobs:
       - name: Upload Linux deb
         uses: actions/upload-artifact@v4
         with:
-          name: lumis-linux
+          name: alloomi-linux
           path: ./lumis/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
 
   release:
@@ -544,22 +544,22 @@ jobs:
       - name: Download Apple Silicon DMG
         uses: actions/download-artifact@v4
         with:
-          name: lumis-dmg-arm64
+          name: alloomi-dmg-arm64
 
       - name: Download Linux deb
         uses: actions/download-artifact@v4
         with:
-          name: lumis-linux
+          name: alloomi-linux
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.get-version.outputs.version }}
-          name: 'Lumis ${{ needs.get-version.outputs.version }}'
+          name: 'Alloomi ${{ needs.get-version.outputs.version }}'
           body: 'See assets to download this version and install.'
           draft: true
           files: |
-            Lumis*.dmg
+            Alloomi*.dmg
             *.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -567,22 +567,22 @@ jobs:
       - name: Update Homebrew Cask
         run: |
           # Find DMG file
-          DMG_FILE=$(ls Lumis*macOS*.dmg)
+          DMG_FILE=$(ls Alloomi*macOS*.dmg)
 
-          # Extract version from filename (e.g., Lumis_0.3.0_macOS_aarch64.dmg -> 0.3.0)
-          VERSION=$(echo "$DMG_FILE" | sed -E 's/Lumis_([0-9.]+)_macOS_aarch64.dmg/\1/')
+          # Extract version from filename (e.g., Alloomi_0.3.0_macOS_aarch64.dmg -> 0.3.0)
+          VERSION=$(echo "$DMG_FILE" | sed -E 's/Alloomi_([0-9.]+)_macOS_aarch64.dmg/\1/')
 
           # Calculate SHA256
           SHA256=$(sha256sum "$DMG_FILE" | awk '{print $1}')
 
           # Update cask file
-          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/lumis.rb
-          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/lumis.rb
+          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/alloomi.rb
+          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/alloomi.rb
 
           # Commit changes
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add Casks/lumis.rb
+          git add Casks/alloomi.rb
           git commit -m "chore: update Homebrew cask to v$VERSION" || echo "No changes to commit"
 
       - name: Push changes
