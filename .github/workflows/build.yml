@@ -296,6 +296,11 @@ jobs:
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Lumis*.dmg)
           echo "Notarizing: $DMG_PATH"
 
+          # Verify DMG exists and check its signature
+          echo "Verifying DMG..."
+          codesign -dv "$DMG_PATH" 2>&1 | head -5
+          xcrun stapler validate "$DMG_PATH" 2>&1 || echo "Staple check: $?"
+
           # Submit without waiting
           OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
             --apple-id "${{ secrets.APPLE_ID }}" \
