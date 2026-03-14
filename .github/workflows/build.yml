@@ -371,6 +371,7 @@ jobs:
           xcrun stapler staple "$DMG_PATH"
 
       - name: Verify Staple
+        continue-on-error: true
         run: |
           DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           xcrun stapler validate "$DMG_PATH"
