@@ -238,15 +238,28 @@ jobs:
 
           echo "✅ Fallback signing complete"
 
-      - name: Sign app bundle with Developer ID (deep)
+      - name: Sign app bundle with Developer ID
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
           APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          echo "Deep signing app bundle: $APP_BUNDLE"
-          # Use --deep to recursively sign all nested binaries
+          echo "Signing app bundle: $APP_BUNDLE"
+
+          # First, move cli-bundle out of Resources temporarily
+          CLI_BUNDLE_SRC="$APP_BUNDLE/Contents/Resources/_up_/cli-bundle"
+          CLI_BUNDLE_TMP="/tmp/alloomi-cli-bundle-$$"
+          mv "$CLI_BUNDLE_SRC" "$CLI_BUNDLE_TMP" 2>/dev/null || true
+
+          # Deep sign the app bundle (without cli-bundle)
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          echo "✅ App bundle deep signed"
+
+          # Move cli-bundle back
+          mv "$CLI_BUNDLE_TMP" "$CLI_BUNDLE_SRC" 2>/dev/null || true
+
+          # Re-sign node with ad-hoc (required for it to work)
+          codesign --force --sign - --options runtime "$CLI_BUNDLE_SRC/node"
+
+          echo "✅ App bundle signed"
 
       - name: Create DMG manually from signed app bundle
         run: |
