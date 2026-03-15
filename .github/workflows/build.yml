@@ -43,7 +43,7 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
@@ -425,7 +425,7 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
