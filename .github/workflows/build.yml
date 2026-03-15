@@ -246,9 +246,6 @@ jobs:
           echo "Deep signing app bundle: $APP_BUNDLE"
           # Use --deep to recursively sign all nested binaries
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          # Restore ad-hoc signing for cli-bundle/node after deep signing
-          # This is required for Node.js to run properly
-          codesign --force --sign - --options runtime "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node"
           echo "✅ App bundle deep signed"
 
       - name: Create DMG manually from signed app bundle
