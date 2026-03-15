@@ -14,7 +14,7 @@ on:
 env:
   NODE_VERSION: '20'
   RUST_VERSION: 'stable'
-  ALLOOMI_REPO: 'melandlabs/Alloomi'
+  ALLOOMI_REPO: 'melandlabs/alloomi'
 
 jobs:
   get-version:
@@ -43,7 +43,7 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.ALLOOMI_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
@@ -425,7 +425,7 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.ALLOOMI_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
