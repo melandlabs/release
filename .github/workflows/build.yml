@@ -14,7 +14,7 @@ on:
 env:
   NODE_VERSION: '20'
   RUST_VERSION: 'stable'
-  LUMIS_REPO: 'melandlabs/lumis'
+  ALLOOMI_REPO: 'melandlabs/alloomi'
 
 jobs:
   get-version:
@@ -43,8 +43,8 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
-          cd lumis
+          git clone https://x-access-token:${{ secrets.ALLOOMI_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
       - name: Setup Node.js
@@ -85,22 +85,22 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('lumis/**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        working-directory: ./lumis
+        working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Rebuild native modules for Tauri
-        working-directory: ./lumis
+        working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
           cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
-        working-directory: ./lumis/apps/web
+        working-directory: ./alloomi/apps/web
         run: |
           cat > .env << 'EOF'
           ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
@@ -178,7 +178,7 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
       - name: Build Tauri app (Apple Silicon)
-        working-directory: ./lumis/apps/web
+        working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
@@ -194,7 +194,7 @@ jobs:
         run: |
           set -e
           SIGN_ID="${APPLE_SIGNING_IDENTITY}"
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
 
           echo "🔐 Fallback: Signing all binaries in $APP_BUNDLE"
           echo "  Using SIGN_ID: $SIGN_ID"
@@ -242,7 +242,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Signing app bundle: $APP_BUNDLE"
 
           # Move cli-bundle out temporarily
@@ -275,11 +275,11 @@ jobs:
       - name: Create DMG manually from signed app bundle
         run: |
           # Remove old DMG
-          rm -f ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
           # Get the app bundle path
-          APP_BUNDLE="./lumis/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          DMG_PATH="./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.0_aarch64.dmg"
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.0_aarch64.dmg"
 
           # Create a temporary directory for DMG contents
           TEMP_DMG_DIR=$(mktemp -d)
@@ -305,7 +305,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Signing DMG with Developer ID: $DMG_PATH"
           # Re-sign the DMG with Developer ID certificate
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$DMG_PATH"
@@ -315,7 +315,7 @@ jobs:
         timeout-minutes: 60
         continue-on-error: true
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Notarizing: $DMG_PATH"
 
           # Verify DMG exists and check its signature
@@ -387,19 +387,19 @@ jobs:
       - name: Staple DMG
         continue-on-error: true
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
           xcrun stapler staple "$DMG_PATH"
 
       - name: Verify Staple
         continue-on-error: true
         run: |
-          DMG_PATH=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           xcrun stapler validate "$DMG_PATH"
 
       - name: Find and rename DMG file
         id: dmg
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/dmg
+        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
         run: |
           # Get original filename
           ORIGINAL=$(ls Alloomi*.dmg)
@@ -425,8 +425,8 @@ jobs:
 
       - name: Clone alloomi source code
         run: |
-          git clone https://x-access-token:${{ secrets.LUMIS_TOKEN }}@github.com/${{ env.LUMIS_REPO }}.git lumis
-          cd lumis
+          git clone https://x-access-token:${{ secrets.ALLOOMI_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
           git checkout ${{ needs.get-version.outputs.checkout_ref }}
 
       - name: Setup Node.js
@@ -454,17 +454,17 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: Install dependencies
-        working-directory: ./lumis
+        working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Rebuild native modules for Tauri
-        working-directory: ./lumis
+        working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
           cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
 
       - name: Create .env file
-        working-directory: ./lumis/apps/web
+        working-directory: ./alloomi/apps/web
         run: |
           cat > .env << 'EOF'
           ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
@@ -522,7 +522,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build Tauri app (Linux)
-        working-directory: ./lumis/apps/web
+        working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
           # Try to build only deb to avoid AppImage issues
@@ -531,17 +531,17 @@ jobs:
 
       - name: Verify deb package exists
         run: |
-          DEB_FILE=$(ls ./lumis/apps/web/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null || echo "")
+          DEB_FILE=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null || echo "")
           if [ -z "$DEB_FILE" ]; then
             echo "❌ Error: deb package not found!"
-            ls -la ./lumis/apps/web/src-tauri/target/release/bundle/ 2>/dev/null || true
+            ls -la ./alloomi/apps/web/src-tauri/target/release/bundle/ 2>/dev/null || true
             exit 1
           fi
           echo "✅ deb package found: $DEB_FILE"
 
       - name: Find deb file
         id: deb
-        working-directory: ./lumis/apps/web/src-tauri/target/release/bundle/deb
+        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/deb
         run: |
           ORIGINAL=$(ls *.deb)
           # Rename Alloomi_0.3.0_amd64.deb to Alloomi_0.3.0_linux_amd64.deb
@@ -553,7 +553,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-linux
-          path: ./lumis/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
+          path: ./alloomi/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
 
   release:
     needs: [get-version, build-tauri-macos, build-tauri-linux]
