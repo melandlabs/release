@@ -309,6 +309,8 @@ jobs:
           echo "Signing DMG with Developer ID: $DMG_PATH"
           # Re-sign the DMG with Developer ID certificate
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$DMG_PATH"
+          # Verify the signature
+          codesign -dv "$DMG_PATH" 2>&1 | head -5
           echo "✅ DMG re-signed"
 
       - name: Notarize DMG
