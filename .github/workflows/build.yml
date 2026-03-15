@@ -251,10 +251,26 @@ jobs:
           # Deep sign the app bundle (without cli-bundle)
           codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
 
-          # Move cli-bundle back (keeps original signature from bundle-runtime.sh)
+          # Move cli-bundle back
           mv /tmp/cli-bundle-backup "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle" || true
 
-          echo "✅ App bundle signed (cli-bundle excluded)"
+          # Sign Node.js with entitlements to allow execution
+          # This is required for Developer ID signed Node.js to work
+          cat > /tmp/node-entitlements.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+            <true/>
+            <key>com.apple.security.cs.disable-library-validation</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --entitlements /tmp/node-entitlements.xml "$APP_BUNDLE/Contents/Resources/_up_/cli-bundle/node"
+
+          echo "✅ App bundle signed"
 
       - name: Create DMG manually from signed app bundle
         run: |
