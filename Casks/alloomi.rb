@@ -1,6 +1,6 @@
 cask "alloomi" do
   version "0.3.0"
-  sha256 "b61673b8a7efaa5607fa3cc5a1e98ba1175f94d2231af8f7d8955c578fdd95f9"
+  sha256 "615996709b173dee559541aa71107b1a240bdbaa53b2e056f03178772915bcd8"
 
   url "https://github.com/melandlabs/release/releases/download/0.0.0-test/Alloomi_0.3.0_macOS_aarch64.dmg",
       verified: "github.com/melandlabs/release"
