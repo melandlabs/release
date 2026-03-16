@@ -195,11 +195,14 @@ jobs:
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Signing app bundle: $APP_BUNDLE"
 
-          # Sign the entire app bundle (including cli-bundle) with Developer ID
-          # Don't move cli-bundle - just sign everything together
-          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
+          # Sign only the main executable and top-level bundle
+          # Skip cli-bundle to preserve its ad-hoc signature from bundle-runtime.sh
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
 
-          echo "✅ App bundle signed"
+          # Sign the main MacOS executable specifically
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
+
+          echo "✅ App bundle signed (cli-bundle preserved)"
 
       - name: Create DMG
         run: |
