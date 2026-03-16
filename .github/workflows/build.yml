@@ -29,7 +29,7 @@ jobs:
             echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
             echo "checkout_ref=refs/tags/${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           else
-            echo "version=0.0.0-test" >> $GITHUB_OUTPUT
+            echo "version=v0.3.0" >> $GITHUB_OUTPUT
             echo "checkout_ref=refs/heads/main" >> $GITHUB_OUTPUT
           fi
 
