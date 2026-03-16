@@ -103,7 +103,6 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: |
           cat > .env << 'EOF'
-          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
 
           # Cloud API Configuration for Tauri Desktop App
           CLOUD_API_URL=https://app.alloomi.ai
@@ -122,9 +121,6 @@ jobs:
           LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
 
           TELEGRAM_MODE=pooling
-          # Telegram App Id and Hash. Reference: https://my.telegram.org/
-          TG_APP_ID=${{ secrets.TG_APP_ID }}
-          TG_APP_HASH=${{ secrets.TG_APP_HASH }}
 
           # Roles
           ROLE_DETECTION_ENABLED=1
@@ -138,18 +134,14 @@ jobs:
           ROLE_OVERLAY_REMOTE_WORKER=1
           ROLE_OVERLAY_SALES_BIZDEV=1
 
-          CLAUDE_CODE_TMPDIR=$HOME/.cache/alloomi-tmp
-
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
           IS_TAURI=true
 
           # iMessage Backend Mode
           IMESSAGE_BACKEND_MODE=sdk
           NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
 
-          CLAUDE_DISABLE_URL_SAFETY_CHECK=true
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
@@ -371,7 +363,6 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: |
           cat > .env << 'EOF'
-          ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }}
 
           # Cloud API Configuration for Tauri Desktop App
           CLOUD_API_URL=https://app.alloomi.ai
@@ -390,9 +381,6 @@ jobs:
           LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
 
           TELEGRAM_MODE=pooling
-          # Telegram App Id and Hash. Reference: https://my.telegram.org/
-          TG_APP_ID=${{ secrets.TG_APP_ID }}
-          TG_APP_HASH=${{ secrets.TG_APP_HASH }}
 
           # Roles
           ROLE_DETECTION_ENABLED=1
@@ -406,18 +394,14 @@ jobs:
           ROLE_OVERLAY_REMOTE_WORKER=1
           ROLE_OVERLAY_SALES_BIZDEV=1
 
-          CLAUDE_CODE_TMPDIR=$HOME/.cache/alloomi-tmp
-
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
-          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
           IS_TAURI=true
 
           # iMessage Backend Mode
           IMESSAGE_BACKEND_MODE=sdk
           NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
 
-          CLAUDE_DISABLE_URL_SAFETY_CHECK=true
           EOF
 
       - name: Install Linux build dependencies
