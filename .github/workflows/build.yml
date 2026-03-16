@@ -272,6 +272,45 @@ jobs:
 
           echo "✅ App bundle signed"
 
+      - name: Notarize app bundle
+        timeout-minutes: 60
+        run: |
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          echo "Notarizing app bundle: $APP_BUNDLE"
+
+          # Submit app bundle for notarization
+          OUTPUT=$(xcrun notarytool submit "$APP_BUNDLE" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1)
+
+          echo "$OUTPUT"
+
+          # Extract submission ID
+          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+          if [ -z "$SUBMISSION_ID" ]; then
+            echo "❌ Failed to get submission ID"
+            exit 1
+          fi
+
+          echo "Submission ID: $SUBMISSION_ID"
+
+          # Wait for notarization to complete
+          echo "Waiting for notarization to complete..."
+          if xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1; then
+            echo "✅ Notarization accepted!"
+          else
+            echo "❌ Notarization failed"
+            exit 1
+          fi
+
+          # Wait for ticket propagation
+          echo "Waiting for ticket propagation..."
+          sleep 60
+
       - name: Create DMG manually from signed app bundle
         run: |
           # Remove old DMG
@@ -313,52 +352,8 @@ jobs:
           codesign -dv "$DMG_PATH" 2>&1 | head -5
           echo "✅ DMG re-signed"
 
-      - name: Notarize DMG
-        timeout-minutes: 60
-        continue-on-error: true
-        run: |
-          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
-          echo "Notarizing: $DMG_PATH"
-
-          # Verify DMG exists and check its signature
-          echo "Verifying DMG..."
-          codesign -dv "$DMG_PATH" 2>&1 | head -5
-          xcrun stapler validate "$DMG_PATH" 2>&1 || echo "Staple check: $?"
-
-          # Submit without waiting
-          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1)
-
-          echo "$OUTPUT"
-
-          # Extract submission ID
-          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
-          if [ -z "$SUBMISSION_ID" ]; then
-            echo "❌ Failed to get submission ID"
-            exit 1
-          fi
-
-          echo "Submission ID: $SUBMISSION_ID"
-
-          # Wait for notarization to complete using xcrun notarytool wait
-          # Use submission ID as the first argument, not DMG path
-          echo "Waiting for notarization to complete..."
-          if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1; then
-            echo "✅ Notarization accepted!"
-          else
-            echo "❌ Notarization failed"
-            exit 1
-          fi
-
-          # Wait additional time for Apple servers to propagate the ticket
-          # Notarization accepted doesn't mean ticket is immediately available for stapling
-          echo "Waiting for ticket propagation..."
-          sleep 120
+      # Note: App bundle was notarized before DMG creation
+      # This ensures the notarization ticket remains valid after signing
 
       - name: Staple DMG
         continue-on-error: true
