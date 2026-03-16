@@ -343,8 +343,9 @@ jobs:
           echo "Submission ID: $SUBMISSION_ID"
 
           # Wait for notarization to complete using xcrun notarytool wait
+          # Use submission ID as the first argument, not DMG path
           echo "Waiting for notarization to complete..."
-          xcrun notarytool wait "$DMG_PATH" \
+          xcrun notarytool wait "$SUBMISSION_ID" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_PASSWORD }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}"
