@@ -342,49 +342,14 @@ jobs:
 
           echo "Submission ID: $SUBMISSION_ID"
 
-          # Poll for status (max 50 minutes)
+          # Wait for notarization to complete using xcrun notarytool wait
           echo "Waiting for notarization to complete..."
-          MAX_ATTEMPTS=100
-          attempt=0
-          while [ $attempt -lt $MAX_ATTEMPTS ]; do
-            attempt=$((attempt + 1))
-
-            STATUS_OUTPUT=$(xcrun notarytool list \
-              --apple-id "${{ secrets.APPLE_ID }}" \
-              --password "${{ secrets.APPLE_PASSWORD }}" \
-              --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || echo "")
-
-            if echo "$STATUS_OUTPUT" | grep -q "Accepted.*$SUBMISSION_ID"; then
-              echo "✅ Notarization accepted!"
-              exit 0
-            elif echo "$STATUS_OUTPUT" | grep -q "Invalid.*$SUBMISSION_ID"; then
-              echo "❌ Notarization failed!"
-              xcrun notarytool log "$SUBMISSION_ID" \
-                --apple-id "${{ secrets.APPLE_ID }}" \
-                --password "${{ secrets.APPLE_PASSWORD }}" \
-                --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || true
-              exit 1
-            fi
-
-            echo "  Status: In Progress... (attempt $attempt/$(($MAX_ATTEMPTS)) - $(date +%H:%M:%S))"
-            sleep 30
-          done
-
-          echo "⚠️ Notarization timed out after $((MAX_ATTEMPTS * 30)) seconds, checking final status..."
-          # Try to get the log which contains the final status
-          FINAL_LOG=$(xcrun notarytool log "$SUBMISSION_ID" \
+          xcrun notarytool wait "$DMG_PATH" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1 || echo "")
+            --team-id "${{ secrets.APPLE_TEAM_ID }}"
 
-          echo "$FINAL_LOG"
-
-          if echo "$FINAL_LOG" | grep -q '"status": "Accepted"'; then
-            echo "✅ Notarization accepted!"
-          else
-            echo "❌ Notarization may have failed"
-            exit 1
-          fi
+          echo "✅ Notarization accepted!"
 
       - name: Staple DMG
         continue-on-error: true
