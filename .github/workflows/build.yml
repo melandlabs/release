@@ -351,12 +351,27 @@ jobs:
 
           echo "✅ Notarization accepted!"
 
+          # Wait additional time for Apple servers to propagate the ticket
+          echo "Waiting for ticket propagation..."
+          sleep 30
+
       - name: Staple DMG
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
-          xcrun stapler staple "$DMG_PATH"
+
+          # Retry stapling up to 3 times with delay
+          for i in 1 2 3; do
+            echo "Staple attempt $i..."
+            if xcrun stapler staple "$DMG_PATH" 2>&1; then
+              echo "✅ Staple succeeded on attempt $i"
+              break
+            else
+              echo "Staple failed, waiting 15 seconds before retry..."
+              sleep 15
+            fi
+          done
 
       - name: Verify Staple
         continue-on-error: true
