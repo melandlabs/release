@@ -345,16 +345,19 @@ jobs:
           # Wait for notarization to complete using xcrun notarytool wait
           # Use submission ID as the first argument, not DMG path
           echo "Waiting for notarization to complete..."
-          xcrun notarytool wait "$SUBMISSION_ID" \
+          if xcrun notarytool wait "$SUBMISSION_ID" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}"
-
-          echo "✅ Notarization accepted!"
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1; then
+            echo "✅ Notarization accepted!"
+          else
+            echo "❌ Notarization failed"
+            exit 1
+          fi
 
           # Wait additional time for Apple servers to propagate the ticket
           echo "Waiting for ticket propagation..."
-          sleep 30
+          sleep 60
 
       - name: Staple DMG
         continue-on-error: true
