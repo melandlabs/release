@@ -97,7 +97,18 @@ jobs:
         working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
-          cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
+          # Build the nested better-sqlite3 inside @photon-ai/imessage-kit
+          cd node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+          npm run build-release
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "✅ All native modules built successfully"
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
@@ -357,7 +368,18 @@ jobs:
         working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
-          cd node_modules/@photon-ai/imessage-kit && pnpm rebuild
+          # Build the nested better-sqlite3 inside @photon-ai/imessage-kit
+          cd node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+          npm run build-release
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "✅ All native modules built successfully"
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
