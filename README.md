@@ -1,6 +1,6 @@
 # Alloomi
 
-Alloomi is an AI-powered IM router and chat agent with multi-platform integration.
+Alloomi is your proactive AI workspace. Senses signals, orchestrates tasks, tracks results.
 
 ## Installation
 
@@ -40,6 +40,10 @@ brew upgrade --cask alloomi
 sudo dpkg -i alloomi_*.deb
 sudo apt-get install -f  # Install dependencies
 ```
+
+### Windows
+
+Coming Soon
 
 ## Installation Troubleshooting
 
