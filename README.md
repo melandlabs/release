@@ -13,14 +13,22 @@ Download the latest release from [GitHub Releases](https://github.com/melandlabs
 #### Homebrew
 
 ```bash
+# If you have a manual installation, remove it first:
+# rm -rf /Applications/Alloomi.app
+
 # Add tap (using this repository)
 brew tap melandlabs/alloomi https://github.com/melandlabs/release
 
 # Install
 brew install --cask alloomi
 
-# If you have a manual installation, remove it first:
-# rm -rf /Applications/Alloomi.app
+# Upgrade
+brew upgrade --cask alloomi
+
+# If install or upgrade fails with "App source is not there", clear cache and reinstall:
+# rm -rf ~/Library/Caches/Homebrew/alloomi
+# brew uninstall --cask alloomi
+# brew install --cask alloomi
 ```
 
 ### Linux
