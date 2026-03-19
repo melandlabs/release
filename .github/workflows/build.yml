@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag (e.g., v0.3.0)'
+        description: 'Version tag (e.g., v0.3.1)'
         required: false
         type: string
 
@@ -29,7 +29,7 @@ jobs:
             echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
             echo "checkout_ref=refs/tags/${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.3.0" >> $GITHUB_OUTPUT
+            echo "version=v0.3.1" >> $GITHUB_OUTPUT
             echo "checkout_ref=refs/heads/main" >> $GITHUB_OUTPUT
           fi
 
@@ -215,7 +215,7 @@ jobs:
 
           # Get the app bundle path
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.0_aarch64.dmg"
+          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.1_aarch64.dmg"
 
           # Create a temporary directory for DMG contents
           TEMP_DMG_DIR=$(mktemp -d)
@@ -456,7 +456,7 @@ jobs:
         working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/deb
         run: |
           ORIGINAL=$(ls *.deb)
-          # Rename Alloomi_0.3.0_amd64.deb to Alloomi_0.3.0_linux_amd64.deb
+          # Rename Alloomi_0.3.1_amd64.deb to Alloomi_0.3.1_linux_amd64.deb
           NEW=$(echo "$ORIGINAL" | sed 's/_amd64/_linux_amd64/')
           mv "$ORIGINAL" "$NEW"
           echo "path=$NEW" >> $GITHUB_OUTPUT
@@ -505,7 +505,7 @@ jobs:
           # Find DMG file
           DMG_FILE=$(ls Alloomi*macOS*.dmg)
 
-          # Extract version from filename (e.g., Alloomi_0.3.0_macOS_aarch64.dmg -> 0.3.0)
+          # Extract version from filename (e.g., Alloomi_0.3.1_macOS_aarch64.dmg -> 0.3.1)
           VERSION=$(echo "$DMG_FILE" | sed -E 's/Alloomi_([0-9.]+)_macOS_aarch64.dmg/\1/')
 
           # Calculate SHA256
