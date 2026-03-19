@@ -97,9 +97,9 @@ jobs:
         working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
-          # Build the nested better-sqlite3 inside @photon-ai/imessage-kit
-          cd node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
-          npm run build-release
+          # Copy the compiled .node into imessage-kit's nested better-sqlite3
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
       - name: Verify native modules are built
         working-directory: ./alloomi
@@ -107,7 +107,7 @@ jobs:
           echo "=== Checking top-level better-sqlite3 ==="
           ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
           echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
           echo "✅ All native modules built successfully"
 
       - name: Create .env file
@@ -368,9 +368,9 @@ jobs:
         working-directory: ./alloomi
         run: |
           pnpm rebuild better-sqlite3
-          # Build the nested better-sqlite3 inside @photon-ai/imessage-kit
-          cd node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
-          npm run build-release
+          # Copy the compiled .node into imessage-kit's nested better-sqlite3
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
       - name: Verify native modules are built
         working-directory: ./alloomi
@@ -378,7 +378,7 @@ jobs:
           echo "=== Checking top-level better-sqlite3 ==="
           ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
           echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
           echo "✅ All native modules built successfully"
 
       - name: Create .env file
