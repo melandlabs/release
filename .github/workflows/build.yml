@@ -2,12 +2,12 @@ name: Build and Release Tauri App
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version tag (e.g., v0.3.1)'
+        description: 'Version tag'
         required: false
         type: string
 
@@ -28,9 +28,10 @@ jobs:
           if [ "${{ github.event.inputs.tag }}" != "" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
             echo "checkout_ref=refs/tags/${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=v0.3.1" >> $GITHUB_OUTPUT
-            echo "checkout_ref=refs/heads/main" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "version=$TAG" >> $GITHUB_OUTPUT
+            echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
           fi
 
   build-tauri-macos:
