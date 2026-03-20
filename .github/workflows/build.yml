@@ -18,7 +18,7 @@ env:
 
 jobs:
   get-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.version.outputs.version }}
       checkout_ref: ${{ steps.version.outputs.checkout_ref }}
@@ -610,7 +610,7 @@ jobs:
   release:
     needs: [get-version, build-tauri-macos, build-tauri-linux]
     if: needs.get-version.outputs.version != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
