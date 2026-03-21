@@ -216,7 +216,7 @@ jobs:
 
           # Get the app bundle path
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_0.3.1_aarch64.dmg"
+          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_${{ needs.get-version.outputs.version }}_aarch64.dmg"
 
           # Create a temporary directory for DMG contents
           TEMP_DMG_DIR=$(mktemp -d)
