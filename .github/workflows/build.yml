@@ -531,9 +531,10 @@ jobs:
         run: |
           pnpm rebuild better-sqlite3
           # Copy the compiled .node into imessage-kit's nested better-sqlite3
-          $destDir = "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/Release"
+          $src = "node_modules\better-sqlite3\build\Release\better_sqlite3.node"
+          $destDir = "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3\build\Release"
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-          Copy-Item "node_modules/better-sqlite3/build/Release/better_sqlite3.node" "$destDir"
+          Copy-Item $src (Join-Path $destDir (Split-Path $src -Leaf))
 
       - name: Verify native modules are built
         working-directory: ./alloomi
