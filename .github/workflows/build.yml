@@ -615,7 +615,7 @@ jobs:
           path: ${{ steps.exe.outputs.full_path }}
 
   release:
-    needs: [get-version, build-tauri-macos, build-tauri-linux]
+    needs: [get-version, build-tauri-macos, build-tauri-linux, build-tauri-windows]
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
     permissions:
@@ -634,6 +634,11 @@ jobs:
         with:
           name: alloomi-linux
 
+      - name: Download Windows exe
+        uses: actions/download-artifact@v4
+        with:
+          name: alloomi-windows
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -644,6 +649,7 @@ jobs:
           files: |
             Alloomi*.dmg
             *.deb
+            *.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
