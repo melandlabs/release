@@ -642,7 +642,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ needs.get-version.outputs.version }}
+          tag_name: v${{ needs.get-version.outputs.version }}
           name: 'Alloomi ${{ needs.get-version.outputs.version }}'
           body: 'See assets to download this version and install.'
           draft: true
