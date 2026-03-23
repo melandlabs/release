@@ -531,18 +531,21 @@ jobs:
         run: |
           pnpm rebuild better-sqlite3
           # Copy the compiled .node into imessage-kit's nested better-sqlite3
+          # pnpm may use symlinks here, so remove any existing symlink first
+          $nestedBss = "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3"
+          Remove-Item -Force $nestedBss -Recurse -ErrorAction SilentlyContinue
+          Remove-Item -Force $nestedBss -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$nestedBss\build\Release" | Out-Null
           $src = "node_modules\better-sqlite3\build\Release\better_sqlite3.node"
-          $destDir = "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3\build\Release"
-          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-          Copy-Item $src (Join-Path $destDir (Split-Path $src -Leaf))
+          Copy-Item $src "$nestedBss\build\Release\"
 
       - name: Verify native modules are built
         working-directory: ./alloomi
         run: |
           Write-Host "=== Checking top-level better-sqlite3 ==="
-          Get-ChildItem -Path "node_modules/better-sqlite3/build/Release/better_sqlite3.node" -ErrorAction Stop
+          Get-ChildItem -Path "node_modules\better-sqlite3\build\Release\better_sqlite3.node" -ErrorAction Stop
           Write-Host "=== Checking nested better-sqlite3 in imessage-kit ==="
-          Get-ChildItem -Path "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node" -ErrorAction Stop
+          Get-ChildItem -Path "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3\build\Release\better_sqlite3.node" -ErrorAction Stop
           Write-Host "All native modules built successfully"
 
       - name: Create .env file
