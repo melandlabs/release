@@ -615,7 +615,7 @@ jobs:
           path: ${{ steps.exe.outputs.full_path }}
 
   release:
-    needs: [get-version, build-tauri-macos, build-tauri-linux, build-tauri-windows]
+    needs: [get-version, build-tauri-macos, build-tauri-linux]
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
     permissions:
