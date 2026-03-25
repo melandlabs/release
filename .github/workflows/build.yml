@@ -291,11 +291,13 @@ jobs:
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
 
+          STAPLED=false
           # Retry stapling up to 20 times with longer delay
           for i in $(seq 1 20); do
             echo "Staple attempt $i..."
             if xcrun stapler staple "$DMG_PATH" 2>&1; then
               echo "✅ Staple succeeded on attempt $i"
+              STAPLED=true
               break
             else
               echo "Staple failed, waiting 60 seconds before retry..."
@@ -303,11 +305,17 @@ jobs:
             fi
           done
 
-      - name: Verify Staple
-        continue-on-error: true
-        run: |
-          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
-          xcrun stapler validate "$DMG_PATH"
+          # Verify staple - fail if validation fails
+          if [ "$STAPLED" = "true" ]; then
+            if xcrun stapler validate "$DMG_PATH" 2>&1; then
+              echo "✅ DMG stapled and validated successfully"
+            else
+              echo "❌ DMG stapled but validation failed"
+              exit 1
+            fi
+          else
+            echo "⚠️  Failed to staple DMG after 20 attempts - DMG may not pass Gatekeeper on older macOS"
+          fi
 
       - name: Find and rename DMG file
         id: dmg
