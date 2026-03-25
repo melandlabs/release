@@ -200,6 +200,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
+          set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Signing app bundle: $APP_BUNDLE"
 
