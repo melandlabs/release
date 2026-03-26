@@ -283,5 +283,297 @@ jobs:
       - name: Upload CI DMG
         uses: actions/upload-artifact@v4
         with:
-          name: alloomi-ci-dmg
+          name: alloomi-ci-dmg-macos
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+
+  # ─── Linux CI ───────────────────────────────────────────────────────────────
+  ci-alloomi-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+
+      - name: Clone alloomi source code (main branch)
+        run: |
+          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
+          if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
+            git checkout ${{ github.event.inputs.commit_sha }}
+          else
+            git checkout ${{ env.ALLOOMI_BRANCH }}
+          fi
+          echo "Commit: $(git log -1 --oneline)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Add pnpm to PATH
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Rust targets
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libxkbcommon-dev \
+            libssl-dev \
+            build-essential
+
+      - name: Get pnpm store directory
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: ./alloomi
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild native modules for Tauri
+        working-directory: ./alloomi
+        run: |
+          pnpm rebuild better-sqlite3
+          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
+          echo "All native modules built successfully"
+
+      - name: Create .env file
+        working-directory: ./alloomi/apps/web
+        run: |
+          cat > .env << 'EOF'
+
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_APP_URL=http://localhost:3415
+
+          LLM_BASE_URL=https://openrouter.ai/api/v1
+          LLM_MODEL=google/gemini-3-flash-preview
+          LLM_REASONING_MODEL=google/gemini-3-flash-preview
+          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
+          LLM_IMAGE_MODEL=openai/gpt-5-image
+
+          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
+          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+
+          TELEGRAM_MODE=pooling
+
+          ROLE_DETECTION_ENABLED=1
+          ROLE_OVERLAY_ANALYST_JOURNALIST=1
+          ROLE_OVERLAY_COMMUNITY_MANAGER=1
+          ROLE_OVERLAY_CUSTOMER_SUCCESS=1
+          ROLE_OVERLAY_EXECUTIVE=1
+          ROLE_OVERLAY_FREELANCER=1
+          ROLE_OVERLAY_INDIE_FOUNDER=1
+          ROLE_OVERLAY_INVESTOR_ADVISOR=1
+          ROLE_OVERLAY_REMOTE_WORKER=1
+          ROLE_OVERLAY_SALES_BIZDEV=1
+
+          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
+          API_TIMEOUT_MS=3000000
+          IS_TAURI=true
+
+          IMESSAGE_BACKEND_MODE=sdk
+          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
+
+          EOF
+
+      - name: Build Tauri app (Linux)
+        working-directory: ./alloomi/apps/web
+        run: pnpm tauri:build
+
+      - name: Upload CI Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: alloomi-ci-linux
+          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/appimage/Alloomi*.AppImage
+
+  # ─── Windows CI ────────────────────────────────────────────────────────────
+  ci-alloomi-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+
+      - name: Clone alloomi source code (main branch)
+        shell: bash
+        run: |
+          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
+          if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
+            git checkout ${{ github.event.inputs.commit_sha }}
+          else
+            git checkout ${{ env.ALLOOMI_BRANCH }}
+          fi
+          echo "Commit: $(git log -1 --oneline)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Add pnpm to PATH
+        shell: bash
+        run: |
+          echo "$HOME/AppData/Local/pnpm" >> $GITHUB_PATH
+          echo "PNPM_HOME=$HOME/AppData/Local/pnpm" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Rust targets
+        shell: bash
+        run: |
+          rustup target add aarch64-pc-windows-msvc
+          rustup target add x86_64-pc-windows-msvc
+
+      - name: Install Visual Studio Build Tools
+        uses: egor-tensin/vsbox@v4
+        with:
+          only: windows-sdk
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: ./alloomi
+        shell: bash
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild native modules for Tauri
+        working-directory: ./alloomi
+        shell: bash
+        run: |
+          pnpm rebuild better-sqlite3
+          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        shell: bash
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
+          echo "All native modules built successfully"
+
+      - name: Create .env file
+        working-directory: ./alloomi/apps/web
+        shell: bash
+        run: |
+          cat > .env << 'EOF'
+
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_APP_URL=http://localhost:3415
+
+          LLM_BASE_URL=https://openrouter.ai/api/v1
+          LLM_MODEL=google/gemini-3-flash-preview
+          LLM_REASONING_MODEL=google/gemini-3-flash-preview
+          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
+          LLM_IMAGE_MODEL=openai/gpt-5-image
+
+          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
+          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+
+          TELEGRAM_MODE=pooling
+
+          ROLE_DETECTION_ENABLED=1
+          ROLE_OVERLAY_ANALYST_JOURNALIST=1
+          ROLE_OVERLAY_COMMUNITY_MANAGER=1
+          ROLE_OVERLAY_CUSTOMER_SUCCESS=1
+          ROLE_OVERLAY_EXECUTIVE=1
+          ROLE_OVERLAY_FREELANCER=1
+          ROLE_OVERLAY_INDIE_FOUNDER=1
+          ROLE_OVERLAY_INVESTOR_ADVISOR=1
+          ROLE_OVERLAY_REMOTE_WORKER=1
+          ROLE_OVERLAY_SALES_BIZDEV=1
+
+          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
+          API_TIMEOUT_MS=3000000
+          IS_TAURI=true
+
+          IMESSAGE_BACKEND_MODE=sdk
+          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
+
+          EOF
+
+      - name: Build Tauri app (Windows with Turbopack)
+        working-directory: ./alloomi/apps/web
+        shell: bash
+        run: pnpm tauri:build
+        env:
+          RUSTUP_WINDOWS_PATH: 1
+
+      - name: Upload CI Windows MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: alloomi-ci-windows
+          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/msi/*.msi
