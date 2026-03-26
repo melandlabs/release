@@ -672,6 +672,7 @@ jobs:
           # Update cask file
           sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/alloomi.rb
           sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/alloomi.rb
+          sed -i "s|download/v[^/]*/|download/v${VERSION}/|g; s|Alloomi_[^_]*_|Alloomi_${VERSION}_|g" Casks/alloomi.rb
 
           # Commit changes
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
