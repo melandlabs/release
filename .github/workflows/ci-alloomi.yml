@@ -482,11 +482,6 @@ jobs:
           rustup target add aarch64-pc-windows-msvc
           rustup target add x86_64-pc-windows-msvc
 
-      - name: Install Visual Studio Build Tools
-        uses: egor-tensin/vsbox@v4
-        with:
-          only: windows-sdk
-
       - name: Get pnpm store directory
         shell: bash
         run: |
