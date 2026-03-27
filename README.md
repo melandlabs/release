@@ -39,7 +39,15 @@ brew upgrade --cask alloomi
 # Download .deb package from releases
 sudo dpkg -i alloomi_*.deb
 sudo apt-get install -f  # Install dependencies
+
+# Fix resource path (required for v0.3.5 and earlier)
+sudo ln -sf /usr/lib/Alloomi/_up_ /usr/bin/_up_
+
+# Start the application
+alloomi
 ```
+
+> **Note:** The symlink above is needed because of a known packaging issue where the binary looks for resources in `/usr/bin/_up_` instead of `/usr/lib/alloomi/_up_`. This will be fixed in a future release.
 
 ### Windows
 

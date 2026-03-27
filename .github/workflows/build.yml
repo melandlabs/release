@@ -464,6 +464,28 @@ jobs:
           fi
           echo "✅ deb package found: $DEB_FILE"
 
+      - name: Fix resource path symlink in deb
+        run: |
+          # The binary looks for resources in /usr/bin/_up_ but dpkg installs to /usr/lib/alloomi/_up_
+          # Extract the deb and patch the postinst script to create the symlink automatically
+          DEB_FILE=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb)
+          WORK_DIR=$(mktemp -d)
+          dpkg-deb -R "$DEB_FILE" "$WORK_DIR"
+
+          # Add symlink creation to postinst
+          if [ -f "$WORK_DIR/DEBIAN/postinst" ]; then
+            # Remove existing symlink fix if any
+            grep -v '/usr/bin/_up_' "$WORK_DIR/DEBIAN/postinst" > "$WORK_DIR/DEBIAN/postinst.tmp" 2>/dev/null || true
+            mv "$WORK_DIR/DEBIAN/postinst.tmp" "$WORK_DIR/DEBIAN/postinst"
+            echo 'ln -sf /usr/lib/Alloomi/_up_ /usr/bin/_up_ 2>/dev/null || true' >> "$WORK_DIR/DEBIAN/postinst"
+          fi
+
+          # Repack the deb
+          rm "$DEB_FILE"
+          dpkg-deb -b "$WORK_DIR" "$DEB_FILE"
+          rm -rf "$WORK_DIR"
+          echo "✅ Patched deb with resource path symlink fix"
+
       - name: Find deb file
         id: deb
         working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/deb
