@@ -582,7 +582,10 @@ jobs:
       - name: Patch tauri.conf.json to skip MSI on Windows
         working-directory: ./alloomi/apps/web
         run: |
-          (Get-Content src-tauri\tauri.conf.json) -replace '"targets": "all"', '"targets": ["nsis"]' | Set-Content src-tauri\tauri.conf.json
+          $content = Get-Content src-tauri\tauri.conf.json -Raw
+          $content = $content -replace '"targets": "all"', '"targets": ["nsis"]'
+          $content | Set-Content -Path src-tauri\tauri.conf.json
+          Get-Content src-tauri\tauri.conf.json | Select-String targets
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
@@ -632,10 +635,11 @@ jobs:
 
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
-        run: pnpm tauri:build
+        run: |
+          pnpm tauri build --bundles nsis
+          node scripts/optimize-tauri-bundle.js
         env:
           USE_TURBOPACK: "true"
-          TAURI_BUNDLE_TARGET: nsis
 
       - name: Find .exe installer
         id: exe
