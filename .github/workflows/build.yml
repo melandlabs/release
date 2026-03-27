@@ -630,6 +630,7 @@ jobs:
         run: pnpm tauri:build
         env:
           USE_TURBOPACK: "true"
+          TAURI_BUNDLE_TARGET: nsis
 
       - name: Find .exe installer
         id: exe

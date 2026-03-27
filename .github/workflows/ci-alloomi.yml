@@ -561,15 +561,16 @@ jobs:
 
           EOF
 
-      - name: Build Tauri app (Windows with Turbopack)
+      - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
         shell: bash
         run: pnpm tauri:build
         env:
           RUSTUP_WINDOWS_PATH: 1
+          TAURI_BUNDLE_TARGET: nsis
 
-      - name: Upload CI Windows MSI
+      - name: Upload CI Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-ci-windows
-          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/msi/*.msi
+          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
