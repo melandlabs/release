@@ -582,10 +582,15 @@ jobs:
       - name: Patch tauri.conf.json to skip MSI on Windows
         working-directory: ./alloomi/apps/web
         run: |
-          $json = Get-Content src-tauri\tauri.conf.json -Raw | ConvertFrom-Json
+          $file = Resolve-Path src-tauri\tauri.conf.json
+          Write-Host "Config file: $file"
+          $before = (Get-Content $file | Select-String 'targets').Line
+          Write-Host "Before: $before"
+          $json = Get-Content $file -Raw | ConvertFrom-Json
           $json.bundle.targets = @("nsis")
-          $json | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.conf.json
-          Write-Host "Patched targets to: $((Get-Content src-tauri\tauri.conf.json | ConvertFrom-Json).bundle.targets)"
+          $json | ConvertTo-Json -Depth 10 | Set-Content $file
+          $after = (Get-Content $file | Select-String 'targets').Line
+          Write-Host "After: $after"
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
@@ -636,10 +641,24 @@ jobs:
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
         run: |
-          pnpm tauri build
+          Write-Host "=== Config before build ==="
+          Get-Content src-tauri\tauri.conf.json | Select-String targets
+          pnpm tauri build 2>&1 | Tee-Object -FilePath tauri-build.log
           node scripts/optimize-tauri-bundle.js
         env:
           USE_TURBOPACK: "true"
+
+      - name: Verify config and debug MSI failure
+        if: failure()
+        run: |
+          Write-Host "=== Config after build (if patch ran) ==="
+          Get-Content ./alloomi/apps/web/src-tauri/tauri.conf.json | Select-String targets
+          Write-Host "=== tauri build log (last 50 lines) ==="
+          Get-Content ./alloomi/apps/web/tauri-build.log -Tail 50
+          Write-Host "=== Running light.exe directly ==="
+          $wixDir = "$env:LOCALAPPDATA\tauri\WixTools314"
+          & "$wixDir\light.exe" -ext WixUIExtension -cultures:en-US -out ./alloomi/apps/web/src-tauri/target/release/bundle/msi/Alloomi_0.3.6_x64_en-US.msi ./alloomi/apps/web/src-tauri/target/release/bundle/wix/x64/main.wixobj 2>&1
+          Write-Host "Exit code: $LASTEXITCODE"
 
       - name: Find .exe installer
         id: exe
