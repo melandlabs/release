@@ -579,6 +579,11 @@ jobs:
           Get-ChildItem -Path "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3\build\Release\better_sqlite3.node" -ErrorAction Stop
           Write-Host "All native modules built successfully"
 
+      - name: Patch tauri.conf.json to skip MSI on Windows
+        working-directory: ./alloomi/apps/web
+        run: |
+          (Get-Content src-tauri\tauri.conf.json) -replace '"targets": "all"', '"targets": ["nsis"]' | Set-Content src-tauri\tauri.conf.json
+
       - name: Create .env file
         working-directory: ./alloomi/apps/web
         run: |
