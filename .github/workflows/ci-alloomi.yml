@@ -18,7 +18,8 @@ env:
   ALLOOMI_BRANCH: 'main'
 
 jobs:
-  ci-alloomi:
+  # ─── MacOS CI ───────────────────────────────────────────────────────────────
+  ci-alloomi-macos:
     runs-on: macos-14
     steps:
       - name: Checkout release repo
