@@ -628,8 +628,6 @@ jobs:
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
-        env:
-          USE_TURBOPACK: "true"
 
       - name: Find .exe installer
         id: exe
