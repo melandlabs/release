@@ -561,6 +561,18 @@ jobs:
 
           EOF
 
+      - name: Patch tauri.conf.json to skip MSI on Windows
+        working-directory: ./alloomi/apps/web
+        shell: bash
+        run: |
+          $content = Get-Content src-tauri\tauri.conf.json -Raw
+          $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
+          $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
+          $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
+          Set-Content -Path src-tauri\tauri.conf.json -Value $content -NoNewline
+          Get-Content src-tauri\tauri.conf.json | Select-String 'targets'
+          Get-Content src-tauri\tauri.conf.json | Select-String 'wix'
+
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
         shell: bash

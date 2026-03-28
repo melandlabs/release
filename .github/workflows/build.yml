@@ -582,15 +582,34 @@ jobs:
       - name: Patch tauri.conf.json to skip MSI on Windows
         working-directory: ./alloomi/apps/web
         run: |
-          $file = Resolve-Path src-tauri\tauri.conf.json
-          Write-Host "Config file: $file"
-          $before = (Get-Content $file | Select-String 'targets').Line
-          Write-Host "Before: $before"
-          $json = Get-Content $file -Raw | ConvertFrom-Json
-          $json.bundle.targets = @("nsis")
-          $json | ConvertTo-Json -Depth 10 | Set-Content $file
-          $after = (Get-Content $file | Select-String 'targets').Line
-          Write-Host "After: $after"
+          $file = "src-tauri\tauri.conf.json"
+          $content = Get-Content $file -Raw
+          Write-Host "Original targets config:"
+          $content -match '"targets"\s*:\s*(\[.*?\]|"[^"]*")' | Out-Null
+          if ($Matches) { Write-Host "  Found: targets: $($Matches[0])" }
+
+          # Replace targets: "all" or targets: [...] with targets: ["nsis"]
+          $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
+          $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
+
+          # Also remove/clear the wix sub-config so WiX is not independently triggered
+          $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
+
+          Set-Content -Path $file -Value $content -NoNewline
+          Write-Host "Patched targets config:"
+          Get-Content $file | Select-String 'targets' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+          Get-Content $file | Select-String 'wix' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+
+      - name: Clear cached WIX directory to force clean download
+        working-directory: ./alloomi/apps/web
+        run: |
+          $wixDir = "$env:LOCALAPPDATA\tauri\WixTools314"
+          if (Test-Path $wixDir) {
+            Write-Host "Removing cached WIX directory: $wixDir"
+            Remove-Item -Recurse -Force $wixDir
+          } else {
+            Write-Host "No cached WIX directory found at $wixDir"
+          }
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
