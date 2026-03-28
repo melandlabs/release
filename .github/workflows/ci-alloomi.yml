@@ -563,7 +563,7 @@ jobs:
 
       - name: Patch tauri.conf.json to skip MSI on Windows
         working-directory: ./alloomi/apps/web
-        shell: bash
+        shell: pwsh
         run: |
           $content = Get-Content src-tauri\tauri.conf.json -Raw
           $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'

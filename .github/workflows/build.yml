@@ -506,6 +506,9 @@ jobs:
     needs: get-version
     if: needs.get-version.outputs.version != ''
     runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -537,8 +540,7 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
 
       - name: Install Rust target
-        run: |
-          rustup target add x86_64-pc-windows-msvc
+        run: rustup target add x86_64-pc-windows-msvc
 
       - name: Get pnpm store directory
         run: |
@@ -562,13 +564,10 @@ jobs:
         run: |
           pnpm rebuild better-sqlite3
           # Copy the compiled .node into imessage-kit's nested better-sqlite3
-          # pnpm may use symlinks here, so remove any existing symlink first
           $nestedBss = "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3"
           Remove-Item -Force $nestedBss -Recurse -ErrorAction SilentlyContinue
-          Remove-Item -Force $nestedBss -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path "$nestedBss\build\Release" | Out-Null
-          $src = "node_modules\better-sqlite3\build\Release\better_sqlite3.node"
-          Copy-Item $src "$nestedBss\build\Release\"
+          Copy-Item "node_modules\better-sqlite3\build\Release\better_sqlite3.node" "$nestedBss\build\Release\"
 
       - name: Verify native modules are built
         working-directory: ./alloomi
@@ -584,24 +583,23 @@ jobs:
         run: |
           $file = "src-tauri\tauri.conf.json"
           $content = Get-Content $file -Raw
-          Write-Host "Original targets config:"
+          Write-Host "Original targets/wix config:"
           $content -match '"targets"\s*:\s*(\[.*?\]|"[^"]*")' | Out-Null
-          if ($Matches) { Write-Host "  Found: targets: $($Matches[0])" }
+          if ($Matches) { Write-Host "  Found: $($Matches[0])" }
 
           # Replace targets: "all" or targets: [...] with targets: ["nsis"]
           $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
           $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
 
-          # Also remove/clear the wix sub-config so WiX is not independently triggered
+          # Nullify the wix sub-config so WiX is not independently triggered
           $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
 
           Set-Content -Path $file -Value $content -NoNewline
-          Write-Host "Patched targets config:"
-          Get-Content $file | Select-String 'targets' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
-          Get-Content $file | Select-String 'wix' | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+          Write-Host "Patched targets/wix config:"
+          Get-Content $file | Select-String 'targets'
+          Get-Content $file | Select-String 'wix'
 
       - name: Clear cached WIX directory to force clean download
-        working-directory: ./alloomi/apps/web
         run: |
           $wixDir = "$env:LOCALAPPDATA\tauri\WixTools314"
           if (Test-Path $wixDir) {
@@ -614,27 +612,19 @@ jobs:
       - name: Create .env file
         working-directory: ./alloomi/apps/web
         run: |
-          $envContent = @"
-
+          @"
           # Cloud API Configuration for Tauri Desktop App
           CLOUD_API_URL=https://app.alloomi.ai
           NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-
-          # Local development URL (for Tauri mode)
           NEXT_PUBLIC_APP_URL=http://localhost:3415
-
           LLM_BASE_URL=https://openrouter.ai/api/v1
           LLM_MODEL=google/gemini-3-flash-preview
           LLM_REASONING_MODEL=google/gemini-3-flash-preview
           LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
           LLM_IMAGE_MODEL=openai/gpt-5-image
-
           LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
           LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-
           TELEGRAM_MODE=pooling
-
-          # Roles
           ROLE_DETECTION_ENABLED=1
           ROLE_OVERLAY_ANALYST_JOURNALIST=1
           ROLE_OVERLAY_COMMUNITY_MANAGER=1
@@ -645,39 +635,22 @@ jobs:
           ROLE_OVERLAY_INVESTOR_ADVISOR=1
           ROLE_OVERLAY_REMOTE_WORKER=1
           ROLE_OVERLAY_SALES_BIZDEV=1
-
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-
-          # iMessage Backend Mode
           IMESSAGE_BACKEND_MODE=sdk
           NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
-
-          "@
-          $envContent | Out-File -FilePath ".env" -Encoding UTF8
+          "@ | Out-File -FilePath ".env" -Encoding UTF8
 
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
         run: |
           Write-Host "=== Config before build ==="
           Get-Content src-tauri\tauri.conf.json | Select-String targets
-          pnpm tauri build 2>&1 | Tee-Object -FilePath tauri-build.log
+          pnpm tauri build
           node scripts/optimize-tauri-bundle.js
         env:
           USE_TURBOPACK: "true"
-
-      - name: Verify config and debug MSI failure
-        if: failure()
-        run: |
-          Write-Host "=== Config after build (if patch ran) ==="
-          Get-Content ./alloomi/apps/web/src-tauri/tauri.conf.json | Select-String targets
-          Write-Host "=== tauri build log (last 50 lines) ==="
-          Get-Content ./alloomi/apps/web/tauri-build.log -Tail 50
-          Write-Host "=== Running light.exe directly ==="
-          $wixDir = "$env:LOCALAPPDATA\tauri\WixTools314"
-          & "$wixDir\light.exe" -ext WixUIExtension -cultures:en-US -out ./alloomi/apps/web/src-tauri/target/release/bundle/msi/Alloomi_0.3.6_x64_en-US.msi ./alloomi/apps/web/src-tauri/target/release/bundle/wix/x64/main.wixobj 2>&1
-          Write-Host "Exit code: $LASTEXITCODE"
 
       - name: Find .exe installer
         id: exe
@@ -686,8 +659,8 @@ jobs:
           $exe = Get-ChildItem -Path . -Recurse -Include "*.exe" | Select-Object -First 1
           $newName = $exe.Name -replace 'amd64\.exe$', 'windows_amd64.exe'
           Copy-Item $exe.FullName $newName
-          Write-Host "path=$newName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding UTF8
-          Write-Host "full_path=$($exe.DirectoryName)\$newName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding UTF8
+          "path=$newName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding UTF8
+          "full_path=$($exe.DirectoryName)\$newName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding UTF8
 
       - name: Upload Windows exe
         uses: actions/upload-artifact@v4
