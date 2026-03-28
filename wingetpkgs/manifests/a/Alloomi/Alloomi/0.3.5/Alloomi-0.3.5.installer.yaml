@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.versionSchema
+ManifestVersion: 1.5.0
+Version: 0.3.5
+Channel: ""
+Paths:
+  - RelativeFilePath: Alloomi_0.3.5_windows_amd64.exe
+  - PortableCommandAlias: alloomi
+InstallerLocale: en-US
+Platform:
+  - Windows.Desktop
+Architecture:
+  - x64
+Installers:
+  - InstallerUrl: https://github.com/melandlabs/release/releases/download/v0.3.5/Alloomi_0.3.5_windows_amd64.exe
+    InstallerSha256: REPLACE_WITH_ACTUAL_SHA256
+    InstallerType: nsis
+    UpgradeBehavior: install
+    Scope: user
+    InstallModes:
+      - Interactive
+      - Silent
+      - SilentWithProgress

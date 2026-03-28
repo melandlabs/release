@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocaleSchema
+ManifestVersion: 1.5.0
+Version: 0.3.5
+Channel: ""
+Locales:
+  - PackageLocale: en-US
+    Publisher: Alloomi
+    PublisherUrl: https://alloomi.ai
+    PublisherSupportUrl: https://github.com/melandlabs/release/issues
+    PrivacyUrl: https://alloomi.ai/privacy
+    Author: Alloomi
+    PackageName: Alloomi
+    PackageUrl: https://github.com/melandlabs/release
+    License: Apache-2.0
+    LicenseUrl: https://github.com/melandlabs/release/blob/main/LICENSE
+    Copyright: Copyright (c) 2026 Alloomi
+    Description: AI-powered IM router and chat agent for macOS, Windows and Linux.
+    ShortDescription: AI-powered IM router and chat agent
+    Moniker: alloomi
+    Tags:
+      - ai
+      - chat
+      - im
+      - messaging
+      - imessage
+      - telegram
+      - slack
+    ReleaseNotesUrl: https://github.com/melandlabs/release/releases/tag/v0.3.5
+    Documentations:
+      - DocumentLabel: Homepage
+        DocumentUrl: https://alloomi.ai
+InstallerManifest: Alloomi-0.3.5.installer.yaml

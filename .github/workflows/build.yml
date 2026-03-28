@@ -669,7 +669,7 @@ jobs:
           path: ${{ steps.exe.outputs.full_path }}
 
   release:
-    needs: [get-version, build-tauri-macos, build-tauri-linux]
+    needs: [get-version, build-tauri-macos, build-tauri-linux, build-tauri-windows]
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
     permissions:
@@ -688,6 +688,11 @@ jobs:
         with:
           name: alloomi-linux
 
+      - name: Download Windows exe
+        uses: actions/download-artifact@v4
+        with:
+          name: alloomi-windows
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -698,6 +703,7 @@ jobs:
           files: |
             Alloomi*.dmg
             *.deb
+            Alloomi*windows*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -722,6 +728,123 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add Casks/alloomi.rb
           git commit -m "chore: update Homebrew cask to v$VERSION" || echo "No changes to commit"
+
+      - name: Update winget manifest
+        run: |
+          # Find Windows exe file
+          EXE_FILE=$(ls Alloomi*windows*.exe)
+
+          # Extract version from filename
+          VERSION=$(echo "$EXE_FILE" | sed -E 's/Alloomi_([0-9.]+)_windows_amd64.exe/\1/')
+
+          # Calculate SHA256
+          SHA256=$(sha256sum "$EXE_FILE" | awk '{print $1}')
+
+          echo "Version: $VERSION"
+          echo "SHA256: $SHA256"
+
+          # Create winget manifest directory
+          MANIFEST_DIR="wingetpkgs/manifests/a/Alloomi/Alloomi/$VERSION"
+          mkdir -p "$MANIFEST_DIR"
+
+          # Write installer manifest
+          cat > "$MANIFEST_DIR/Alloomi-$VERSION.installer.yaml" << EOF
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.versionSchema
+          ManifestVersion: 1.6.0
+          Version: $VERSION
+          InstallerLocale: en-US
+          Platform:
+            - Windows.Desktop
+          Architecture:
+            - x64
+          Installers:
+            - InstallerUrl: https://github.com/melandlabs/release/releases/download/v$VERSION/Alloomi_$VERSION\_windows_amd64.exe
+              InstallerSha256: $SHA256
+              InstallerType: nsis
+              UpgradeBehavior: install
+              Scope: user
+              InstallModes:
+                - Interactive
+                - Silent
+                - SilentWithProgress
+          EOF
+
+          # Write default manifest
+          cat > "wingetpkgs/manifests/a/Alloomi/Alloomi/Alloomi.yaml" << EOF
+          # yaml-language-server: \$schema=https://aka.ms/winget-manifest.defaultLocaleSchema
+          ManifestVersion: 1.6.0
+          Version: $VERSION
+          Locales:
+            - PackageLocale: en-US
+              Publisher: Alloomi
+              PublisherUrl: https://alloomi.ai
+              PublisherSupportUrl: https://github.com/melandlabs/release/issues
+              PrivacyUrl: https://alloomi.ai/privacy
+              Author: Alloomi
+              PackageName: Alloomi
+              PackageUrl: https://github.com/melandlabs/release
+              License: Apache-2.0
+              LicenseUrl: https://github.com/melandlabs/release/blob/main/LICENSE
+              Copyright: Copyright (c) 2024 Alloomi
+              Description: AI-powered IM router and chat agent for macOS, Windows and Linux.
+              ShortDescription: AI-powered IM router and chat agent
+              Moniker: alloomi
+              Tags:
+                - ai
+                - chat
+                - im
+                - messaging
+                - imessage
+                - telegram
+                - slack
+              ReleaseNotesUrl: https://github.com/melandlabs/release/releases/tag/v$VERSION
+          InstallerManifest: Alloomi-$VERSION.installer.yaml
+          EOF
+
+          echo "✅ Winget manifest created"
+
+      - name: Create PR to winget-pkgs
+        env:
+          VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          set -e
+
+          # Fork winget-pkgs (idempotent — skips if fork already exists)
+          gh repo fork microsoft/winget-pkgs --clone=false --remote --confirm || true
+
+          # Clone the fork shallowly
+          FORK_DIR=$(mktemp -d)
+          gh repo clone ${{ github.repository_owner }}/winget-pkgs "$FORK_DIR" -- --depth 1
+          cd "$FORK_DIR"
+
+          # Create a branch for this version
+          git checkout -b "alloomi-v$VERSION"
+
+          # Copy manifests into the fork
+          mkdir -p "manifests/a/Alloomi/Alloomi/$VERSION"
+          cp "${{ github.workspace }}/wingetpkgs/manifests/a/Alloomi/Alloomi/$VERSION/"*.yaml "manifests/a/Alloomi/Alloomi/$VERSION/"
+          cp "${{ github.workspace }}/wingetpkgs/manifests/a/Alloomi/Alloomi/Alloomi.yaml" "manifests/a/Alloomi/Alloomi/"
+
+          # Commit and push to the fork
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add manifests/a/Alloomi/Alloomi/
+          git commit -m "Alloomi version $VERSION"
+          git push -u origin "alloomi-v$VERSION" -f
+
+          # Create PR to microsoft/winget-pkgs
+          gh pr create \
+            --repo microsoft/winget-pkgs \
+            --base master \
+            --head ${{ github.repository_owner }}:alloomi-v$VERSION \
+            --title "Alloomi version $VERSION" \
+            --body "Auto-generated PR for Alloomi v$VERSION.
+
+Installer: NSIS (.exe) for Windows x64
+Generated by GitHub Actions from ${{ github.repository }}"
+
+          echo "PR created successfully"
+          rm -rf "$FORK_DIR"
 
       - name: Push changes
         uses: ad-m/github-push-action@master
