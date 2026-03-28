@@ -12,6 +12,7 @@ on:
         type: string
 
 env:
+  # CI trigger: bump to re-run on main
   NODE_VERSION: '22'
   RUST_VERSION: 'stable'
   ALLOOMI_REPO: 'melandlabs/alloomi'
