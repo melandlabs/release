@@ -1,5 +1,7 @@
 # Alloomi
 
+[![GitHub Downloads](https://img.shields.io/github/downloads/melandlabs/alloomi/total?style=flat-square&logo=github&label=Downloads&color=blue)](https://github.com/melandlabs/alloomi/releases)
+
 Alloomi is your proactive AI workspace. Senses signals, orchestrates tasks, tracks results.
 
 ## Installation
