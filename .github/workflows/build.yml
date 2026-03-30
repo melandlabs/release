@@ -1050,8 +1050,6 @@ jobs:
           Get-Content src-tauri\tauri.conf.json | Select-String targets
           pnpm tauri build
           node scripts/optimize-tauri-bundle.js
-        env:
-          USE_TURBOPACK: "true"
 
       - name: Find .exe installer
         id: exe
