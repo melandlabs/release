@@ -681,12 +681,14 @@ jobs:
       - name: Build Tauri app (Linux)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
+        env:
+          TAURI_BUNDLE_TARGET: deb
 
       - name: Upload CI Linux binary
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-ci-linux
-          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/appimage/Alloomi*.AppImage
+          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
 
   # ─── Windows CI ────────────────────────────────────────────────────────────
   ci-alloomi-windows:
@@ -971,6 +973,8 @@ jobs:
       - name: Build Tauri app (Linux ARM64)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
+        env:
+          TAURI_BUNDLE_TARGET: deb
 
       - name: Upload CI Linux ARM64 binary
         uses: actions/upload-artifact@v4
