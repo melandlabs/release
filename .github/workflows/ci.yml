@@ -195,6 +195,7 @@ jobs:
 
       - name: Create DMG
         run: |
+          mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
           rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
@@ -461,6 +462,7 @@ jobs:
 
       - name: Create DMG
         run: |
+          mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
           rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"

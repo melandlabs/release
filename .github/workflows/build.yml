@@ -216,6 +216,7 @@ jobs:
       - name: Create DMG
         run: |
           # Remove old DMG
+          mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
           rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
           # Get the app bundle path
@@ -497,6 +498,7 @@ jobs:
 
       - name: Create DMG
         run: |
+          mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
           rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_${{ needs.get-version.outputs.version }}_amd64.dmg"
