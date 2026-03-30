@@ -1055,7 +1055,7 @@ jobs:
 
       - name: Find .exe installer
         id: exe
-        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle
+        working-directory: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle
         run: |
           $exe = Get-ChildItem -Path . -Recurse -Include "*.exe" | Select-Object -First 1
           $newName = $exe.Name -replace 'amd64\.exe$', 'windows_amd64.exe'
