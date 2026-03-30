@@ -13,7 +13,7 @@ on:
 
 env:
   # CI trigger: bump to re-run on main
-  NODE_VERSION: '22'
+  NODE_VERSION: '22.14'
   RUST_VERSION: 'stable'
   ALLOOMI_REPO: 'melandlabs/Alloomi'
   ALLOOMI_BRANCH: 'main'
