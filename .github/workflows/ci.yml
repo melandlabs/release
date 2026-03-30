@@ -426,6 +426,17 @@ jobs:
 
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Patch tauri.conf.json to skip bundler on macOS (Intel)
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            c.bundle.targets = ['app'];
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
+            console.log('Patched targets to app');
+          "
+
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
