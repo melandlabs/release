@@ -889,29 +889,16 @@ jobs:
           fi
           echo "deb package found: $DEB_FILE"
 
-      - name: Find ARM64 deb file
-        id: deb
-        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/deb
-        run: |
-          ORIGINAL=$(ls *.deb)
-          NEW=$(echo "$ORIGINAL" | sed 's/_amd64/_linux_arm64/')
-          mv "$ORIGINAL" "$NEW"
-          echo "path=$NEW" >> $GITHUB_OUTPUT
-          echo "full_path=$PWD/$NEW" >> $GITHUB_OUTPUT
-
       - name: Upload Linux ARM64 deb
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-linux-arm64
-          path: ${{ steps.deb.outputs.full_path }}
+          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
 
   build-tauri-windows:
     needs: get-version
     if: needs.get-version.outputs.version != ''
     runs-on: windows-2022
-    defaults:
-      run:
-        shell: pwsh
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -933,22 +920,31 @@ jobs:
           version: 9
 
       - name: Add pnpm to PATH
+        shell: bash
         run: |
-          Add-Content -Path $env:GITHUB_PATH -Value "$HOME\AppData\Local\pnpm"
-          Add-Content -Path $env:GITHUB_ENV -Value "PNPM_HOME=$HOME\AppData\Local\pnpm"
+          echo "$HOME/AppData/Local/pnpm" >> $GITHUB_PATH
+          echo "PNPM_HOME=$HOME/AppData/Local/pnpm" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Install Rust target
-        run: rustup target add x86_64-pc-windows-msvc
+      - name: Install Rust targets
+        shell: bash
+        run: |
+          rustup target add aarch64-pc-windows-msvc
+          rustup target add x86_64-pc-windows-msvc
 
       - name: Get pnpm store directory
+        shell: bash
         run: |
-          $storePath = pnpm store path --silent
-          Add-Content -Path $env:GITHUB_ENV -Value "STORE_PATH=$storePath"
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
         uses: actions/cache@v3
@@ -960,63 +956,46 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./alloomi
+        shell: bash
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Rebuild native modules for Tauri
         working-directory: ./alloomi
+        shell: bash
         run: |
           pnpm rebuild better-sqlite3
-          # Copy the compiled .node into imessage-kit's nested better-sqlite3
-          $nestedBss = "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3"
-          Remove-Item -Force $nestedBss -Recurse -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path "$nestedBss\build\Release" | Out-Null
-          Copy-Item "node_modules\better-sqlite3\build\Release\better_sqlite3.node" "$nestedBss\build\Release\"
+          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
       - name: Verify native modules are built
         working-directory: ./alloomi
+        shell: bash
         run: |
-          Write-Host "=== Checking top-level better-sqlite3 ==="
-          Get-ChildItem -Path "node_modules\better-sqlite3\build\Release\better_sqlite3.node" -ErrorAction Stop
-          Write-Host "=== Checking nested better-sqlite3 in imessage-kit ==="
-          Get-ChildItem -Path "node_modules\@photon-ai\imessage-kit\node_modules\better-sqlite3\build\Release\better_sqlite3.node" -ErrorAction Stop
-          Write-Host "All native modules built successfully"
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
+          echo "All native modules built successfully"
 
       - name: Patch tauri.conf.json to skip MSI on Windows
         working-directory: ./alloomi/apps/web
+        shell: pwsh
         run: |
-          $file = "src-tauri\tauri.conf.json"
-          $content = Get-Content $file -Raw
-          Write-Host "Original targets/wix config:"
-          $content -match '"targets"\s*:\s*(\[.*?\]|"[^"]*")' | Out-Null
-          if ($Matches) { Write-Host "  Found: $($Matches[0])" }
-
-          # Replace targets: "all" or targets: [...] with targets: ["nsis"]
+          $content = Get-Content src-tauri\tauri.conf.json -Raw
           $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
           $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
-
-          # Nullify the wix sub-config so WiX is not independently triggered
           $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
-
-          Set-Content -Path $file -Value $content -NoNewline
-          Write-Host "Patched targets/wix config:"
-          Get-Content $file | Select-String 'targets'
-          Get-Content $file | Select-String 'wix'
-
-      - name: Clear cached WIX directory to force clean download
-        run: |
-          $wixDir = "$env:LOCALAPPDATA\tauri\WixTools314"
-          if (Test-Path $wixDir) {
-            Write-Host "Removing cached WIX directory: $wixDir"
-            Remove-Item -Recurse -Force $wixDir
-          } else {
-            Write-Host "No cached WIX directory found at $wixDir"
-          }
+          Set-Content -Path src-tauri\tauri.conf.json -Value $content -NoNewline
+          Get-Content src-tauri\tauri.conf.json | Select-String 'targets'
+          Get-Content src-tauri\tauri.conf.json | Select-String 'wix'
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
+        shell: bash
         run: |
-          @"
-          # Cloud API Configuration for Tauri Desktop App
+          cat > .env << 'EOF'
+
           CLOUD_API_URL=https://app.alloomi.ai
           NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
           NEXT_PUBLIC_APP_URL=http://localhost:3415
@@ -1043,18 +1022,20 @@ jobs:
           IS_TAURI=true
           IMESSAGE_BACKEND_MODE=sdk
           NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
-          "@ | Out-File -FilePath ".env" -Encoding UTF8
+
+          EOF
 
       - name: Build Tauri app (Windows)
         working-directory: ./alloomi/apps/web
-        run: |
-          Write-Host "=== Config before build ==="
-          Get-Content src-tauri\tauri.conf.json | Select-String targets
-          pnpm tauri build
-          node scripts/optimize-tauri-bundle.js
+        shell: bash
+        run: pnpm tauri:build
+        env:
+          RUSTUP_WINDOWS_PATH: 1
+          TAURI_BUNDLE_TARGET: nsis
 
       - name: Find .exe installer
         id: exe
+        shell: pwsh
         working-directory: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle
         run: |
           $exe = Get-ChildItem -Path . -Recurse -Include "*.exe" | Select-Object -First 1
