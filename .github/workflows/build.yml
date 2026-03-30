@@ -1101,19 +1101,60 @@ jobs:
 
       - name: Update Homebrew Cask
         run: |
-          # Find DMG file
-          DMG_FILE=$(ls Alloomi*macOS*.dmg)
+          # Find both macOS DMG files
+          DMG_ARM64=$(ls Alloomi*macOS_aarch64.dmg)
+          DMG_AMD64=$(ls Alloomi*macOS_amd64.dmg)
 
-          # Extract version from filename (e.g., Alloomi_0.3.1_macOS_aarch64.dmg -> 0.3.1)
-          VERSION=$(echo "$DMG_FILE" | sed -E 's/Alloomi_([0-9.]+)_macOS_aarch64.dmg/\1/')
+          # Extract version from filename
+          VERSION=$(echo "$DMG_ARM64" | sed -E 's/Alloomi_([0-9.]+)_macOS_aarch64\.dmg/\1/')
+          echo "Version: $VERSION"
 
-          # Calculate SHA256
-          SHA256=$(sha256sum "$DMG_FILE" | awk '{print $1}')
+          # Calculate SHA256 for each DMG
+          SHA256_ARM64=$(sha256sum "$DMG_ARM64" | awk '{print $1}')
+          SHA256_AMD64=$(sha256sum "$DMG_AMD64" | awk '{print $1}')
+          echo "SHA256 ARM64: $SHA256_ARM64"
+          echo "SHA256 AMD64: $SHA256_AMD64"
 
-          # Update cask file
-          sed -i "s/version \"[^\"]*\"/version \"$VERSION\"/" Casks/alloomi.rb
-          sed -i "s/sha256 \"[^\"]*\"/sha256 \"$SHA256\"/" Casks/alloomi.rb
-          sed -i "s|download/v[^/]*/|download/v${VERSION}/|g; s|Alloomi_[^_]*_|Alloomi_${VERSION}_|g" Casks/alloomi.rb
+          # Update cask file with Node.js (handles multi-line Ruby correctly)
+          node -e "
+            const fs = require('fs');
+            let content = fs.readFileSync('Casks/alloomi.rb', 'utf8');
+            const ver = '$VERSION';
+            const shaAarch64 = '$SHA256_ARM64';
+            const shaAmd64 = '$SHA256_AMD64';
+            const baseUrl = 'https://github.com/melandlabs/release/releases/download/v' + ver;
+
+            // Update version (both branches)
+            content = content.replace(/version \"[^\"]+\"/g, 'version \"' + ver + '\"');
+
+            // Update sha256 for ARM64 branch (inside intel? == false block)
+            content = content.replace(
+              /sha256 \"[^\"]+\"(?=\s*\n\s*url \"[^\"]*aarch64)/,
+              'sha256 \"' + shaAarch64 + '\"'
+            );
+
+            // Update sha256 for AMD64 branch (inside intel? block)
+            content = content.replace(
+              /sha256 \"[^\"]+\"(?=\s*\n\s*url \"[^\"]*amd64)/,
+              'sha256 \"' + shaAmd64 + '\"'
+            );
+
+            // Update URLs
+            content = content.replace(
+              /url \"https:\/\/github\.com\/melandlabs\/release\/releases\/download\/v[^\/]+\/Alloomi_[^\"]+\.dmg\"/g,
+              function(match) {
+                if (match.includes('aarch64')) {
+                  return 'url \"' + baseUrl + '/Alloomi_' + ver + '_macOS_aarch64.dmg\"';
+                } else {
+                  return 'url \"' + baseUrl + '/Alloomi_' + ver + '_macOS_amd64.dmg\"';
+                }
+              }
+            );
+
+            fs.writeFileSync('Casks/alloomi.rb', content);
+            console.log('Cask file updated');
+            console.log(content);
+          "
 
           # Commit changes
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
