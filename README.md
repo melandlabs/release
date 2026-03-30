@@ -53,6 +53,22 @@ alloomi
 
 ### Windows
 
+#### Installer (Recommended for Windows)
+
+Download the latest `.exe` installer from [GitHub Releases](https://github.com/melandlabs/release/releases) and run it.
+
+**Bypassing Windows SmartScreen:**
+
+When you run the installer, Windows SmartScreen may show a warning that blocks execution. This happens because the application is not yet widely distributed and does not have a long code-signing reputation. To proceed:
+
+1. On the SmartScreen warning screen, click **"More info"**.
+2. You will see the publisher name and the executable file name.
+3. Click **"Run anyway"** to proceed with the installation.
+
+This step is safe — the application is open-source and its code is publicly verifiable. You only need to do this once per machine; subsequent updates typically bypass SmartScreen automatically after the first run.
+
+#### Winget
+
 Coming Soon
 
 ## Installation Troubleshooting
