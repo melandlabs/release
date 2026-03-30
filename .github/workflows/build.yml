@@ -37,7 +37,7 @@ jobs:
             echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
           fi
 
-  build-tauri-macos:
+  build-tauri-macos-arm64:
     needs: get-version
     if: needs.get-version.outputs.version != ''
     runs-on: macos-14
@@ -336,6 +336,255 @@ jobs:
           name: alloomi-dmg-arm64
           path: ${{ steps.dmg.outputs.full_path }}
 
+  build-tauri-macos-amd64:
+    needs: get-version
+    if: needs.get-version.outputs.version != ''
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+
+      - name: Clone alloomi source code
+        run: |
+          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
+          git checkout ${{ needs.get-version.outputs.checkout_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Add pnpm to PATH
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Rust targets
+        run: |
+          rustup target add x86_64-apple-darwin
+
+      - name: Get pnpm store directory
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: ./alloomi
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild native modules for Tauri
+        working-directory: ./alloomi
+        run: |
+          pnpm rebuild better-sqlite3
+          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
+          echo "All native modules built successfully"
+
+      - name: Create .env file
+        working-directory: ./alloomi/apps/web
+        run: |
+          cat > .env << 'EOF'
+
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_APP_URL=http://localhost:3415
+          LLM_BASE_URL=https://openrouter.ai/api/v1
+          LLM_MODEL=google/gemini-3-flash-preview
+          LLM_REASONING_MODEL=google/gemini-3-flash-preview
+          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
+          LLM_IMAGE_MODEL=openai/gpt-5-image
+          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
+          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+          TELEGRAM_MODE=pooling
+          ROLE_DETECTION_ENABLED=1
+          ROLE_OVERLAY_ANALYST_JOURNALIST=1
+          ROLE_OVERLAY_COMMUNITY_MANAGER=1
+          ROLE_OVERLAY_CUSTOMER_SUCCESS=1
+          ROLE_OVERLAY_EXECUTIVE=1
+          ROLE_OVERLAY_FREELANCER=1
+          ROLE_OVERLAY_INDIE_FOUNDER=1
+          ROLE_OVERLAY_INVESTOR_ADVISOR=1
+          ROLE_OVERLAY_REMOTE_WORKER=1
+          ROLE_OVERLAY_SALES_BIZDEV=1
+          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
+          API_TIMEOUT_MS=3000000
+          IS_TAURI=true
+          IMESSAGE_BACKEND_MODE=sdk
+          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
+
+          EOF
+
+      - name: Import Apple Certificate and Intermediate Certificates
+        env:
+          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+          security import cert.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
+          rm cert.p12
+          curl -s -o /tmp/AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          curl -s -o /tmp/DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          security import /tmp/AppleWWDRCAG3.cer -A -k $KEYCHAIN_PATH
+          security import /tmp/DeveloperIDG2CA.cer -A -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Patch tauri.conf.json to skip bundler on macOS
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            c.bundle.targets = ['app'];
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
+            console.log('Patched targets to app');
+          "
+
+      - name: Build Tauri app (Apple Intel)
+        working-directory: ./alloomi/apps/web
+        run: pnpm tauri build
+        env:
+          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+
+      - name: Sign app bundle with Developer ID
+        env:
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+        run: |
+          set -e
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          echo "Signing app bundle: $APP_BUNDLE"
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
+          echo "App bundle signed (cli-bundle preserved)"
+
+      - name: Create DMG
+        run: |
+          rm -f ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          DMG_PATH="./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi_${{ needs.get-version.outputs.version }}_amd64.dmg"
+          TEMP_DMG_DIR=$(mktemp -d)
+          cp -R "$APP_BUNDLE" "$TEMP_DMG_DIR/"
+          ln -s /Applications "$TEMP_DMG_DIR/Applications"
+          hdiutil create -volname "Alloomi" \
+            -fs HFS+ \
+            -srcfolder "$TEMP_DMG_DIR" \
+            -format UDZO \
+            "$DMG_PATH"
+          rm -rf "$TEMP_DMG_DIR"
+          echo "DMG created from signed app bundle"
+
+      - name: Notarize DMG
+        timeout-minutes: 60
+        run: |
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          echo "Notarizing: $DMG_PATH"
+          codesign -dv "$DMG_PATH" 2>&1 | head -5
+          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1)
+          echo "$OUTPUT"
+          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+          if [ -z "$SUBMISSION_ID" ]; then
+            echo "Failed to get submission ID"
+            exit 1
+          fi
+          echo "Submission ID: $SUBMISSION_ID"
+          echo "Waiting for notarization to complete..."
+          if xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1; then
+            echo "Notarization accepted!"
+          else
+            echo "Notarization failed"
+            exit 1
+          fi
+          echo "Waiting for ticket propagation..."
+          sleep 300
+
+      - name: Staple DMG
+        continue-on-error: true
+        run: |
+          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          echo "Stapling: $DMG_PATH"
+          STAPLED=false
+          for i in $(seq 1 20); do
+            echo "Staple attempt $i..."
+            if xcrun stapler staple "$DMG_PATH" 2>&1; then
+              echo "Staple succeeded on attempt $i"
+              STAPLED=true
+              break
+            else
+              echo "Staple failed, waiting 60 seconds before retry..."
+              sleep 60
+            fi
+          done
+          if [ "$STAPLED" = "true" ]; then
+            if xcrun stapler validate "$DMG_PATH" 2>&1; then
+              echo "DMG stapled and validated successfully"
+            else
+              echo "DMG stapled but validation failed"
+              exit 1
+            fi
+          else
+            echo "Failed to staple DMG after 20 attempts"
+          fi
+
+      - name: Find and rename DMG file
+        id: dmg
+        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
+        run: |
+          ORIGINAL=$(ls Alloomi*.dmg)
+          NEW=$(echo "$ORIGINAL" | sed 's/Alloomi_\(.*\)_amd64\.dmg/Alloomi_\1_macOS_amd64.dmg/')
+          mv "$ORIGINAL" "$NEW"
+          echo "path=$NEW" >> $GITHUB_OUTPUT
+          echo "full_path=$(pwd)/$NEW" >> $GITHUB_OUTPUT
+
+      - name: Upload Apple Intel DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: alloomi-dmg-amd64
+          path: ${{ steps.dmg.outputs.full_path }}
+
   build-tauri-linux:
     needs: get-version
     if: needs.get-version.outputs.version != ''
@@ -444,7 +693,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - name: Build Tauri app (Linux)
         working-directory: ./alloomi/apps/web
@@ -499,8 +748,160 @@ jobs:
       - name: Upload Linux deb
         uses: actions/upload-artifact@v4
         with:
-          name: alloomi-linux
+          name: alloomi-linux-amd64
           path: ./alloomi/apps/web/src-tauri/target/release/bundle/deb/${{ steps.deb.outputs.path }}
+
+  build-tauri-linux-arm64:
+    needs: get-version
+    if: needs.get-version.outputs.version != ''
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+
+      - name: Clone alloomi source code
+        run: |
+          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          cd alloomi
+          git checkout ${{ needs.get-version.outputs.checkout_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Add pnpm to PATH
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "PNPM_HOME=$HOME/.local" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils \
+            libssl-dev \
+            build-essential
+
+      - name: Get pnpm store directory
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: ./alloomi
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild native modules for Tauri
+        working-directory: ./alloomi
+        run: |
+          pnpm rebuild better-sqlite3
+          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+
+      - name: Verify native modules are built
+        working-directory: ./alloomi
+        run: |
+          echo "=== Checking top-level better-sqlite3 ==="
+          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
+          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
+          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
+          echo "All native modules built successfully"
+
+      - name: Create .env file
+        working-directory: ./alloomi/apps/web
+        run: |
+          cat > .env << 'EOF'
+
+          CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
+          NEXT_PUBLIC_APP_URL=http://localhost:3415
+          LLM_BASE_URL=https://openrouter.ai/api/v1
+          LLM_MODEL=google/gemini-3-flash-preview
+          LLM_REASONING_MODEL=google/gemini-3-flash-preview
+          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
+          LLM_IMAGE_MODEL=openai/gpt-5-image
+          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
+          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+          TELEGRAM_MODE=pooling
+          ROLE_DETECTION_ENABLED=1
+          ROLE_OVERLAY_ANALYST_JOURNALIST=1
+          ROLE_OVERLAY_COMMUNITY_MANAGER=1
+          ROLE_OVERLAY_CUSTOMER_SUCCESS=1
+          ROLE_OVERLAY_EXECUTIVE=1
+          ROLE_OVERLAY_FREELANCER=1
+          ROLE_OVERLAY_INDIE_FOUNDER=1
+          ROLE_OVERLAY_INVESTOR_ADVISOR=1
+          ROLE_OVERLAY_REMOTE_WORKER=1
+          ROLE_OVERLAY_SALES_BIZDEV=1
+          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
+          API_TIMEOUT_MS=3000000
+          IS_TAURI=true
+          IMESSAGE_BACKEND_MODE=sdk
+          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
+
+          EOF
+
+      - name: Build Tauri app (Linux ARM64)
+        working-directory: ./alloomi/apps/web
+        run: pnpm tauri:build
+        env:
+          TAURI_BUNDLE_TARGET: deb
+        continue-on-error: true
+
+      - name: Verify deb package exists
+        run: |
+          DEB_FILE=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null || echo "")
+          if [ -z "$DEB_FILE" ]; then
+            echo "Error: deb package not found!"
+            ls -la ./alloomi/apps/web/src-tauri/target/release/bundle/ 2>/dev/null || true
+            exit 1
+          fi
+          echo "deb package found: $DEB_FILE"
+
+      - name: Find ARM64 deb file
+        id: deb
+        working-directory: ./alloomi/apps/web/src-tauri/target/release/bundle/deb
+        run: |
+          ORIGINAL=$(ls *.deb)
+          NEW=$(echo "$ORIGINAL" | sed 's/_amd64/_linux_arm64/')
+          mv "$ORIGINAL" "$NEW"
+          echo "path=$NEW" >> $GITHUB_OUTPUT
+          echo "full_path=$PWD/$NEW" >> $GITHUB_OUTPUT
+
+      - name: Upload Linux ARM64 deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: alloomi-linux-arm64
+          path: ${{ steps.deb.outputs.full_path }}
 
   build-tauri-windows:
     needs: get-version
@@ -665,11 +1066,11 @@ jobs:
       - name: Upload Windows exe
         uses: actions/upload-artifact@v4
         with:
-          name: alloomi-windows
+          name: alloomi-windows-amd64
           path: ${{ steps.exe.outputs.full_path }}
 
   release:
-    needs: [get-version, build-tauri-macos, build-tauri-linux, build-tauri-windows]
+    needs: [get-version, build-tauri-macos-arm64, build-tauri-macos-amd64, build-tauri-linux-amd64, build-tauri-linux-arm64, build-tauri-windows]
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
     permissions:
@@ -683,15 +1084,25 @@ jobs:
         with:
           name: alloomi-dmg-arm64
 
-      - name: Download Linux deb
+      - name: Download Apple Intel DMG
         uses: actions/download-artifact@v4
         with:
-          name: alloomi-linux
+          name: alloomi-dmg-amd64
+
+      - name: Download Linux AMD64 deb
+        uses: actions/download-artifact@v4
+        with:
+          name: alloomi-linux-amd64
+
+      - name: Download Linux ARM64 deb
+        uses: actions/download-artifact@v4
+        with:
+          name: alloomi-linux-arm64
 
       - name: Download Windows exe
         uses: actions/download-artifact@v4
         with:
-          name: alloomi-windows
+          name: alloomi-windows-amd64
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
