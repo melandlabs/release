@@ -587,7 +587,7 @@ jobs:
           name: alloomi-dmg-amd64
           path: ${{ steps.dmg.outputs.full_path }}
 
-  build-tauri-linux:
+  build-tauri-linux-amd64:
     needs: get-version
     if: needs.get-version.outputs.version != ''
     runs-on: ubuntu-22.04
