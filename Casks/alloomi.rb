@@ -1,7 +1,7 @@
 cask "alloomi" do
   if Hardware::CPU.intel?
     version "0.3.6"
-    sha256 "1329587690a0c41515ded1a1f1a7c6dae0c79eb65c9c2d6ecf61a4a09e2a05bc"
+    sha256 "b44018b6704ee2681ffa6de8d141ec848f310f8c9c413b0b67e4e39ef07bb773"
     url "https://github.com/melandlabs/release/releases/download/v0.3.6/Alloomi_0.3.6_macOS_amd64.dmg"
   else
     version "0.3.6"
