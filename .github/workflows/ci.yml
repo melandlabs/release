@@ -3,8 +3,8 @@ name: CI Alloomi (Main Branch)
 on:
   push:
     branches:
-      - ci-test
-      # - main
+      # - ci-test
+      - main
   workflow_dispatch:
     inputs:
       commit_sha:
