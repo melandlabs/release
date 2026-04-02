@@ -3,7 +3,6 @@ name: CI Alloomi (Main Branch)
 on:
   push:
     branches:
-      # - ci-test
       - main
   workflow_dispatch:
     inputs:
