@@ -128,10 +128,6 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
-          # iMessage Backend Mode
-          IMESSAGE_BACKEND_MODE=sdk
-          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
-
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
@@ -380,8 +376,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-          IMESSAGE_BACKEND_MODE=sdk
-          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
 
           EOF
 
@@ -654,9 +648,6 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
-          IMESSAGE_BACKEND_MODE=sdk
-          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
-
           EOF
 
       - name: Build Tauri app (Linux)
@@ -783,9 +774,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-
-          IMESSAGE_BACKEND_MODE=sdk
-          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
 
           EOF
 
@@ -926,8 +914,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-          IMESSAGE_BACKEND_MODE=sdk
-          NEXT_PUBLIC_IMESSAGE_BACKEND_MODE=sdk
 
           EOF
 
