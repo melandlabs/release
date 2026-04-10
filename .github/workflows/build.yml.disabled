@@ -14,7 +14,7 @@ on:
 env:
   NODE_VERSION: '22'
   RUST_VERSION: 'stable'
-  ALLOOMI_REPO: 'melandlabs/Alloomi'
+  ALLOOMI_REPO: 'melandlabs/Alloomi-internal'
 
 jobs:
   get-version:
@@ -141,6 +141,9 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
+
+          # Bundle character feature
+          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
 
           EOF
 
@@ -418,6 +421,9 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
+          # Bundle character feature
+          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
+
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
@@ -647,6 +653,9 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
+          # Bundle character feature
+          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
+
           EOF
 
       - name: Install Linux build dependencies
@@ -815,6 +824,9 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
+          # Bundle character feature
+          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
+
           EOF
 
       - name: Build Tauri app (Linux ARM64)
@@ -955,6 +967,9 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
+
+          # Bundle character feature
+          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
 
           EOF
 
