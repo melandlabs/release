@@ -14,7 +14,7 @@ on:
 env:
   NODE_VERSION: '22'
   RUST_VERSION: 'stable'
-  ALLOOMI_REPO: 'melandlabs/Alloomi-internal'
+  ALLOOMI_REPO: 'melandlabs/alloomi-internal'
 
 jobs:
   get-version:
