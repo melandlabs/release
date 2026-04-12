@@ -128,9 +128,6 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
-          # Bundle character feature
-          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
-
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
@@ -379,9 +376,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-
-          # Bundle character feature
-          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
 
           EOF
 
@@ -654,9 +648,6 @@ jobs:
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
 
-          # Bundle character feature
-          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
-
           EOF
 
       - name: Build Tauri app (Linux)
@@ -783,9 +774,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-
-          # Bundle character feature
-          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
 
           EOF
 
@@ -926,9 +914,6 @@ jobs:
           ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
           API_TIMEOUT_MS=3000000
           IS_TAURI=true
-
-          # Bundle character feature
-          NEXT_PUBLIC_ENABLE_CHARACTER_TAB=true
 
           EOF
 
