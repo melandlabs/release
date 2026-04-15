@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocaleSchema
 ManifestVersion: 1.5.0
-Version: 0.3.8
+Version: 0.4.0
 Channel: ""
 Locales:
   - PackageLocale: en-US
@@ -25,8 +25,8 @@ Locales:
       - imessage
       - telegram
       - slack
-    ReleaseNotesUrl: https://github.com/melandlabs/release/releases/tag/v0.3.8
+    ReleaseNotesUrl: https://github.com/melandlabs/release/releases/tag/v0.4.0
     Documentations:
       - DocumentLabel: Homepage
         DocumentUrl: https://alloomi.ai
-InstallerManifest: Alloomi-0.3.8.installer.yaml
+InstallerManifest: Alloomi-0.4.0.installer.yaml
