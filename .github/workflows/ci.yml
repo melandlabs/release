@@ -132,8 +132,8 @@ jobs:
 
       - name: Import Apple Certificate and Intermediate Certificates
         env:
-          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
         run: |
           # Create a new keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
@@ -159,14 +159,14 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
-          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
-          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
-          SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 
       - name: Sign app bundle with Developer ID
         env:
-          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
@@ -209,9 +209,9 @@ jobs:
           codesign -dv "$DMG_PATH" 2>&1 | head -5
 
           OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1)
 
           echo "$OUTPUT"
 
@@ -225,9 +225,9 @@ jobs:
 
           echo "Waiting for notarization to complete..."
           if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1; then
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1; then
             echo "✅ Notarization accepted!"
           else
             echo "❌ Notarization failed"
@@ -381,8 +381,8 @@ jobs:
 
 #   - name: Import Apple Certificate and Intermediate Certificates
 #     env:
-#       APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-#       APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+#       APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+#       APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
 #     run: |
 #       KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 #       security create-keychain -p "" $KEYCHAIN_PATH
@@ -415,14 +415,14 @@ jobs:
 #     working-directory: ./alloomi/apps/web
 #     run: pnpm tauri:build
 #     env:
-#       APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-#       APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
-#       APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
-#       SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+#       APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+#       APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+#       APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+#       SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 
 #   - name: Sign app bundle with Developer ID
 #     env:
-#       APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+#       APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 #     run: |
 #       set -e
 #       APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
@@ -465,9 +465,9 @@ jobs:
 #       codesign -dv "$DMG_PATH" 2>&1 | head -5
 
 #       OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-#         --apple-id "${{ secrets.ED_APPLE_ID }}" \
-#         --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-#         --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
+#         --apple-id "${{ secrets.APPLE_ID }}" \
+#         --password "${{ secrets.APPLE_PASSWORD }}" \
+#         --team-id "${{ secrets.APPLE_TEAM_ID }}" 2>&1)
 
 #       echo "$OUTPUT"
 
