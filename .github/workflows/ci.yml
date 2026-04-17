@@ -10,6 +10,11 @@ on:
         description: 'Specific commit SHA to build (optional)'
         required: false
         type: string
+      skip_macos_signing:
+        description: 'Skip macOS code signing and notarization'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # CI trigger: bump to re-run on main
@@ -22,6 +27,8 @@ jobs:
   # ─── MacOS CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
     runs-on: macos-14
+    env:
+      SKIP_MACOS_SIGNING: ${{ github.event.inputs.skip_macos_signing || 'false' }}
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -131,6 +138,7 @@ jobs:
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
+        if: env.SKIP_MACOS_SIGNING != 'true'
         env:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
@@ -165,6 +173,7 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
 
       - name: Sign app bundle with Developer ID
+        if: env.SKIP_MACOS_SIGNING != 'true'
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
@@ -201,6 +210,7 @@ jobs:
           echo "✅ DMG created from signed app bundle"
 
       - name: Notarize DMG
+        if: env.SKIP_MACOS_SIGNING != 'true'
         timeout-minutes: 360
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
@@ -238,6 +248,7 @@ jobs:
           sleep 300
 
       - name: Staple DMG
+        if: env.SKIP_MACOS_SIGNING != 'true'
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
