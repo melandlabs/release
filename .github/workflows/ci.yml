@@ -201,7 +201,7 @@ jobs:
           echo "✅ DMG created from signed app bundle"
 
       - name: Notarize DMG
-        timeout-minutes: 240
+        timeout-minutes: 360
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
           echo "Notarizing: $DMG_PATH"
