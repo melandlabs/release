@@ -27,6 +27,8 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+cert.*
+scripts/local-sign.sh
 
 # vercel
 .vercel
