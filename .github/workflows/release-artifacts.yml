@@ -22,7 +22,7 @@ jobs:
         if: github.event.inputs.source_run_id == ''
         id: find-run
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json id --jq '.[0].id')
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,7 +63,7 @@ jobs:
         if: github.event.inputs.source_run_id == ''
         id: find-run
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json id --jq '.[0].id')
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,7 +104,7 @@ jobs:
         if: github.event.inputs.source_run_id == ''
         id: find-run
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json id --jq '.[0].id')
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -145,7 +145,7 @@ jobs:
         if: github.event.inputs.source_run_id == ''
         id: find-run
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json id --jq '.[0].id')
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -186,7 +186,7 @@ jobs:
         if: github.event.inputs.source_run_id == ''
         id: find-run
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json id --jq '.[0].id')
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
