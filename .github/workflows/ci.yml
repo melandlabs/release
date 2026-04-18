@@ -288,7 +288,7 @@ jobs:
   ci-alloomi-macos-amd64:
     runs-on: macos-15-intel
     env:
-      SKIP_MACOS_SIGNING: ${{ github.event.inputs.skip_macos_signing || 'true' }}
+      SKIP_MACOS_SIGNING: 'true'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
