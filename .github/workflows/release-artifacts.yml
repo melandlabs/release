@@ -35,6 +35,9 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
+      - name: Setup artifacts directory
+        run: mkdir -p artifacts
+
       - name: Download Linux AMD64
         run: |
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux -R ${{ github.repository }} -D linux_amd64
