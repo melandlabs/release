@@ -28,7 +28,7 @@ jobs:
   ci-alloomi-macos-arm64:
     runs-on: macos-14
     env:
-      SKIP_MACOS_SIGNING: 'true'
+      SKIP_SIGNING: 'true'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -138,7 +138,7 @@ jobs:
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: env.SKIP_SIGNING != 'true'
         env:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
@@ -174,7 +174,7 @@ jobs:
           SKIP_SIGNING: 'true'
 
       - name: Sign app bundle with Developer ID
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: env.SKIP_SIGNING != 'true'
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
@@ -289,7 +289,7 @@ jobs:
   ci-alloomi-macos-amd64:
     runs-on: macos-15-intel
     env:
-      SKIP_MACOS_SIGNING: 'true'
+      SKIP_SIGNING: 'true'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -394,7 +394,7 @@ jobs:
           EOF
 
       - name: Import Apple Certificate and Intermediate Certificates
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: env.SKIP_SIGNING != 'true'
         env:
           APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
@@ -437,7 +437,7 @@ jobs:
           SKIP_SIGNING: 'true'
 
       - name: Sign app bundle with Developer ID
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: env.SKIP_SIGNING != 'true'
         env:
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
         run: |
