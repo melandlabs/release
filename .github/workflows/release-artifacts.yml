@@ -90,6 +90,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: List artifacts
+        run: ls -la artifacts/
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
