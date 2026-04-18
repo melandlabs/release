@@ -210,7 +210,7 @@ jobs:
           echo "✅ DMG created from signed app bundle"
 
       - name: Notarize DMG
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: github.event.inputs.skip_notarization != 'true'
         timeout-minutes: 360
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
@@ -248,7 +248,7 @@ jobs:
           sleep 300
 
       - name: Staple DMG
-        if: env.SKIP_MACOS_SIGNING != 'true'
+        if: github.event.inputs.skip_notarization != 'true'
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
