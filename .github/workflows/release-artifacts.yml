@@ -2,8 +2,8 @@ name: Release Alloomi
 
 on:
   push:
-    branches:
-      - release
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -12,7 +12,7 @@ on:
         type: string
 
 env:
-  VERSION: '0.4.1'
+  VERSION: ${{ github.ref_name }}
 
 jobs:
   download-and-release:
@@ -32,165 +32,72 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download and rename Linux AMD64
+      - name: Download Linux AMD64
         run: |
           mkdir -p artifacts
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux -R ${{ github.repository }} -D artifacts
           cd artifacts
-          ls -la
           for f in *.deb; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_amd64.deb"
           done
-          ls -la
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Linux AMD64 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alloomi_${{ env.VERSION }}_linux_amd64
-          path: artifacts/Alloomi_${{ env.VERSION }}_linux_amd64.deb
-
-  download-and-release-linux-arm64:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Find latest CI run
-        if: github.event.inputs.source_run_id == ''
-        id: find-run
-        run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set source run ID
-        id: source
-        run: |
-          echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
-
-      - name: Download and rename Linux ARM64
+      - name: Download Linux ARM64
         run: |
           mkdir -p artifacts
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux-arm64 -R ${{ github.repository }} -D artifacts
           cd artifacts
-          ls -la
           for f in *.deb; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_aarch64.deb"
           done
-          ls -la
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Linux ARM64 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alloomi_${{ env.VERSION }}_linux_aarch64
-          path: artifacts/Alloomi_${{ env.VERSION }}_linux_aarch64.deb
-
-  download-and-release-macos-arm64:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Find latest CI run
-        if: github.event.inputs.source_run_id == ''
-        id: find-run
-        run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set source run ID
-        id: source
-        run: |
-          echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
-
-      - name: Download and rename macOS ARM64
+      - name: Download macOS ARM64
         run: |
           mkdir -p artifacts
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-macos -R ${{ github.repository }} -D artifacts
           cd artifacts
-          ls -la
           for f in *.dmg; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
           done
-          ls -la
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload macOS ARM64 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alloomi_${{ env.VERSION }}_macOS_aarch64
-          path: artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg
-
-  download-and-release-macos-amd64:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Find latest CI run
-        if: github.event.inputs.source_run_id == ''
-        id: find-run
-        run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set source run ID
-        id: source
-        run: |
-          echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
-
-      - name: Download and rename macOS AMD64
+      - name: Download macOS AMD64
         run: |
           mkdir -p artifacts
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-x64 -R ${{ github.repository }} -D artifacts
           cd artifacts
-          ls -la
           for f in *.dmg; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_amd64.dmg"
           done
-          ls -la
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload macOS AMD64 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alloomi_${{ env.VERSION }}_macOS_amd64
-          path: artifacts/Alloomi_${{ env.VERSION }}_macOS_amd64.dmg
-
-  download-and-release-windows:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Find latest CI run
-        if: github.event.inputs.source_run_id == ''
-        id: find-run
-        run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
-          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set source run ID
-        id: source
-        run: |
-          echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
-
-      - name: Download and rename Windows
+      - name: Download Windows
         run: |
           mkdir -p artifacts
           gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-windows -R ${{ github.repository }} -D artifacts
           cd artifacts
-          ls -la
           for f in *.exe; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_windows_amd64.exe"
           done
-          ls -la
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Alloomi_${{ env.VERSION }}_windows_amd64
-          path: artifacts/Alloomi_${{ env.VERSION }}_windows_amd64.exe
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/Alloomi_${{ env.VERSION }}_linux_amd64.deb
+            artifacts/Alloomi_${{ env.VERSION }}_linux_aarch64.deb
+            artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg
+            artifacts/Alloomi_${{ env.VERSION }}_macOS_amd64.dmg
+            artifacts/Alloomi_${{ env.VERSION }}_windows_amd64.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
