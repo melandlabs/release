@@ -37,56 +37,41 @@ jobs:
 
       - name: Download Linux AMD64
         run: |
-          mkdir -p artifacts
-          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux -R ${{ github.repository }} -D artifacts
-          cd artifacts
-          for f in *.deb; do
-            [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_amd64.deb"
-          done
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux -R ${{ github.repository }} -D linux_amd64
+          find linux_amd64 -type f \( -name "*.deb" -o -name "*.AppImage" \) -exec mv {} "Alloomi_${{ env.VERSION }}_linux_amd64.deb" \;
+          mv Alloomi_${{ env.VERSION }}_linux_amd64.deb artifacts/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Linux ARM64
         run: |
-          mkdir -p artifacts
-          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux-arm64 -R ${{ github.repository }} -D artifacts
-          cd artifacts
-          for f in *.deb; do
-            [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_aarch64.deb"
-          done
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux-arm64 -R ${{ github.repository }} -D linux_arm64
+          find linux_arm64 -type f \( -name "*.deb" -o -name "*.AppImage" \) -exec mv {} "Alloomi_${{ env.VERSION }}_linux_aarch64.deb" \;
+          mv Alloomi_${{ env.VERSION }}_linux_aarch64.deb artifacts/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download macOS ARM64
         run: |
-          mkdir -p artifacts
-          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-macos -R ${{ github.repository }} -D artifacts
-          cd artifacts
-          for f in *.dmg; do
-            [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
-          done
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-macos -R ${{ github.repository }} -D macos_arm64
+          find macos_arm64 -type f -name "*.dmg" -exec mv {} "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" \;
+          mv Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg artifacts/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download macOS AMD64
         run: |
-          mkdir -p artifacts
-          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-x64 -R ${{ github.repository }} -D artifacts
-          cd artifacts
-          for f in *.dmg; do
-            [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_amd64.dmg"
-          done
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-x64 -R ${{ github.repository }} -D macos_amd64
+          find macos_amd64 -type f -name "*.dmg" -exec mv {} "Alloomi_${{ env.VERSION }}_macOS_amd64.dmg" \;
+          mv Alloomi_${{ env.VERSION }}_macOS_amd64.dmg artifacts/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Windows
         run: |
-          mkdir -p artifacts
-          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-windows -R ${{ github.repository }} -D artifacts
-          cd artifacts
-          for f in *.exe; do
-            [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_windows_amd64.exe"
-          done
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-windows -R ${{ github.repository }} -D windows
+          find windows -type f -name "*.exe" -exec mv {} "Alloomi_${{ env.VERSION }}_windows_amd64.exe" \;
+          mv Alloomi_${{ env.VERSION }}_windows_amd64.exe artifacts/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
