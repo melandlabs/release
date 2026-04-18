@@ -10,7 +10,7 @@ on:
         description: 'Specific commit SHA to build (optional)'
         required: false
         type: string
-    skip_notarization:
+      skip_notarization:
         description: 'Skip notarization for macOS builds'
         required: false
         default: 'true'
