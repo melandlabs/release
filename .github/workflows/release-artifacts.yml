@@ -32,23 +32,18 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download Linux AMD64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: alloomi-ci-linux
-          path: artifacts/
-          run-id: ${{ steps.source.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Rename Linux AMD64
+      - name: Download and rename Linux AMD64
         run: |
+          mkdir -p artifacts
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux -D artifacts
           cd artifacts
           ls -la
           for f in *.deb; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_amd64.deb"
           done
           ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux AMD64 artifact
         uses: actions/upload-artifact@v4
@@ -73,23 +68,18 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download Linux ARM64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: alloomi-ci-linux-arm64
-          path: artifacts/
-          run-id: ${{ steps.source.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Rename Linux ARM64
+      - name: Download and rename Linux ARM64
         run: |
+          mkdir -p artifacts
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-linux-arm64 -D artifacts
           cd artifacts
           ls -la
           for f in *.deb; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_linux_aarch64.deb"
           done
           ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux ARM64 artifact
         uses: actions/upload-artifact@v4
@@ -114,23 +104,18 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download macOS ARM64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: alloomi-ci-dmg-macos
-          path: artifacts/
-          run-id: ${{ steps.source.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Rename macOS ARM64
+      - name: Download and rename macOS ARM64
         run: |
+          mkdir -p artifacts
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-macos -D artifacts
           cd artifacts
           ls -la
           for f in *.dmg; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
           done
           ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS ARM64 artifact
         uses: actions/upload-artifact@v4
@@ -155,23 +140,18 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download macOS AMD64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: alloomi-ci-dmg-x64
-          path: artifacts/
-          run-id: ${{ steps.source.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Rename macOS AMD64
+      - name: Download and rename macOS AMD64
         run: |
+          mkdir -p artifacts
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-dmg-x64 -D artifacts
           cd artifacts
           ls -la
           for f in *.dmg; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_macOS_amd64.dmg"
           done
           ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS AMD64 artifact
         uses: actions/upload-artifact@v4
@@ -196,23 +176,18 @@ jobs:
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: alloomi-ci-windows
-          path: artifacts/
-          run-id: ${{ steps.source.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Rename Windows
+      - name: Download and rename Windows
         run: |
+          mkdir -p artifacts
+          gh run download ${{ steps.source.outputs.run_id }} -n alloomi-ci-windows -D artifacts
           cd artifacts
           ls -la
           for f in *.exe; do
             [ -f "$f" ] && mv "$f" "Alloomi_${{ env.VERSION }}_windows_amd64.exe"
           done
           ls -la
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
