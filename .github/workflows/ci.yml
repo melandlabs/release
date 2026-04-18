@@ -23,7 +23,7 @@ jobs:
   ci-alloomi-macos-arm64:
     runs-on: macos-14
     env:
-      SKIP_SIGNING: 'true'
+      SKIP_SIGNING: 'false'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -166,7 +166,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          SKIP_SIGNING: 'true'
+          SKIP_SIGNING: 'false'
 
       - name: Sign app bundle with Developer ID
         if: env.SKIP_SIGNING != 'true'
@@ -284,7 +284,7 @@ jobs:
   ci-alloomi-macos-amd64:
     runs-on: macos-15-intel
     env:
-      SKIP_SIGNING: 'true'
+      SKIP_SIGNING: 'false'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -429,7 +429,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          SKIP_SIGNING: 'true'
+          SKIP_SIGNING: 'false'
 
       - name: Sign app bundle with Developer ID
         if: env.SKIP_SIGNING != 'true'
