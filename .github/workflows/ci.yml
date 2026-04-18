@@ -510,7 +510,7 @@ jobs:
           sleep 300
 
       - name: Staple DMG
-if: github.event.inputs.skip_notarization != 'true'
+        if: github.event.inputs.skip_notarization != 'true'
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
