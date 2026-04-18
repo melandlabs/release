@@ -2,8 +2,8 @@ name: Release Alloomi
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - release
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -12,7 +12,7 @@ on:
         type: string
 
 env:
-  VERSION: ${{ github.ref_name }}
+  VERSION: '0.4.1'
 
 jobs:
   download-and-release:
@@ -90,9 +90,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v0.4.1
           draft: false
           prerelease: false
+          update_existing: true
           files: |
             artifacts/Alloomi_${{ env.VERSION }}_linux_amd64.deb
             artifacts/Alloomi_${{ env.VERSION }}_linux_aarch64.deb
