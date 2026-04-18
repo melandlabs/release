@@ -3,7 +3,7 @@ name: Release Alloomi
 on:
   push:
     branches:
-      - main
+      - release
   workflow_dispatch:
     inputs:
       source_run_id:
