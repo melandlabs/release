@@ -10,11 +10,6 @@ on:
         description: 'Specific commit SHA to build (optional)'
         required: false
         type: string
-      skip_notarization:
-        description: 'Skip notarization for macOS builds'
-        required: false
-        default: 'true'
-        type: string
 
 env:
   # CI trigger: bump to re-run on main
@@ -211,7 +206,7 @@ jobs:
           echo "✅ DMG created from signed app bundle"
 
       - name: Notarize DMG
-        if: github.event.inputs.skip_notarization != 'true'
+        if: env.SKIP_SIGNING != 'true'
         timeout-minutes: 360
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
@@ -249,7 +244,7 @@ jobs:
           sleep 300
 
       - name: Staple DMG
-        if: github.event.inputs.skip_notarization != 'true'
+        if: env.SKIP_SIGNING != 'true'
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
@@ -474,7 +469,7 @@ jobs:
           echo "✅ DMG created from signed app bundle"
 
       - name: Notarize DMG
-        if: github.event.inputs.skip_notarization != 'true'
+        if: env.SKIP_SIGNING != 'true'
         timeout-minutes: 60
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
@@ -512,7 +507,7 @@ jobs:
           sleep 300
 
       - name: Staple DMG
-        if: github.event.inputs.skip_notarization != 'true'
+        if: env.SKIP_SIGNING != 'true'
         continue-on-error: true
         run: |
           DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
