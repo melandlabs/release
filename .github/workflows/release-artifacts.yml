@@ -94,19 +94,48 @@ jobs:
 
       - name: Verify macOS artifact version
         run: |
-          apt-get update && apt-get install -y p7zip-full
-          7z x -y -o/tmp/dmg artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg > /dev/null
-          APP_PATH=$(find /tmp/dmg -name "*.app" -type d | head -1)
-          PLIST_PATH="$APP_PATH/Contents/Info.plist"
-          MACOS_VERSION=$(grep -A1 "CFBundleShortVersionString" "$PLIST_PATH" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
-          echo "Expected version: ${{ env.VERSION }}"
-          echo "macOS artifact version: $MACOS_VERSION"
-          if [ "$MACOS_VERSION" != "${{ env.VERSION }}" ]; then
-            echo "ERROR: macOS artifact version mismatch! Expected ${{ env.VERSION }}, got $MACOS_VERSION"
-            exit 1
-          fi
-          echo "macOS version verified successfully"
-          rm -rf /tmp/dmg
+          python3 << 'EOF'
+          import plistlib
+          import zlib
+          import struct
+          import sys
+
+          dmg_path = "artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
+          expected_version = "${{ env.VERSION }}"
+
+          with open(dmg_path, 'rb') as f:
+            data = f.read()
+
+          # Try to find plist in DMG (UDIF stores plist in koly chunk)
+          idx = data.find(b'plst')  # 'plst' chunk type in UDIF
+          if idx == -1:
+            idx = data.find(b'bplst')  # compressed plist
+          if idx == -1:
+            idx = data.find(b'plist')
+          if idx == -1:
+            # Try to find CFBundleShortVersionString directly
+            search = b'CFBundleShortVersionString'
+            idx = data.find(search)
+            if idx == -1:
+              print(f"ERROR: Could not find plist in DMG")
+              sys.exit(1)
+
+          # Look for version string near the marker
+          chunk = data[idx:idx+500]
+          import re
+          match = re.search(rb'<string>([\d\.]+)</string>', chunk)
+          if match:
+            version = match.group(1).decode()
+            print(f"Expected version: {expected_version}")
+            print(f"macOS artifact version: {version}")
+            if version != expected_version:
+              print(f"ERROR: macOS artifact version mismatch!")
+              sys.exit(1)
+            print("macOS version verified successfully")
+          else:
+            print(f"ERROR: Could not extract version from plist")
+            sys.exit(1)
+          EOF
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
