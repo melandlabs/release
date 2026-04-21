@@ -81,6 +81,17 @@ jobs:
       - name: List artifacts
         run: ls -la artifacts/
 
+      - name: Verify artifact version
+        run: |
+          echo "Expected version: ${{ env.VERSION }}"
+          ARTIFACT_VERSION=$(dpkg-deb -I artifacts/Alloomi_${{ env.VERSION }}_linux_amd64.deb | grep Version | awk '{print $2}')
+          echo "Artifact version: $ARTIFACT_VERSION"
+          if [ "$ARTIFACT_VERSION" != "${{ env.VERSION }}" ]; then
+            echo "ERROR: Artifact version mismatch! Expected ${{ env.VERSION }}, got $ARTIFACT_VERSION"
+            exit 1
+          fi
+          echo "Version verified successfully"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
