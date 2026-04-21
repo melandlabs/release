@@ -81,7 +81,7 @@ jobs:
       - name: List artifacts
         run: ls -la artifacts/
 
-      - name: Verify artifact version
+      - name: Verify Linux artifact version
         run: |
           echo "Expected version: ${{ env.VERSION }}"
           ARTIFACT_VERSION=$(dpkg-deb -I artifacts/Alloomi_${{ env.VERSION }}_linux_amd64.deb | grep Version | awk '{print $2}')
@@ -90,7 +90,23 @@ jobs:
             echo "ERROR: Artifact version mismatch! Expected ${{ env.VERSION }}, got $ARTIFACT_VERSION"
             exit 1
           fi
-          echo "Version verified successfully"
+          echo "Linux version verified successfully"
+
+      - name: Verify macOS artifact version
+        run: |
+          apt-get update && apt-get install -y p7zip-full
+          7z x -y -o/tmp/dmg artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg > /dev/null
+          APP_PATH=$(find /tmp/dmg -name "*.app" -type d | head -1)
+          PLIST_PATH="$APP_PATH/Contents/Info.plist"
+          MACOS_VERSION=$(grep -A1 "CFBundleShortVersionString" "$PLIST_PATH" | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          echo "Expected version: ${{ env.VERSION }}"
+          echo "macOS artifact version: $MACOS_VERSION"
+          if [ "$MACOS_VERSION" != "${{ env.VERSION }}" ]; then
+            echo "ERROR: macOS artifact version mismatch! Expected ${{ env.VERSION }}, got $MACOS_VERSION"
+            exit 1
+          fi
+          echo "macOS version verified successfully"
+          rm -rf /tmp/dmg
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
