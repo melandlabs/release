@@ -12,7 +12,7 @@ on:
         type: string
 
 env:
-  VERSION: '0.4.1'
+  VERSION: '0.4.2'
 
 permissions:
   contents: write
@@ -84,7 +84,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.1
+          tag_name: v0.4.2
           draft: false
           prerelease: false
           overwrite_files: true
