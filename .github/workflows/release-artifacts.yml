@@ -92,89 +92,31 @@ jobs:
           fi
           echo "Linux version verified successfully"
 
+      - name: Install tools for DMG extraction
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full plutil
+
       - name: Verify macOS artifact version
         run: |
-          python3 << 'EOF'
-          import re
-          import sys
-          import subprocess
-          import tempfile
-          import os
-
-          dmg_path = "artifacts/Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
-          expected_version = "${{ env.VERSION }}"
-
-          # Try to use udifd (part of libvhdi) to extract, or try 7z if available
-          # First check if we can find the version string in raw DMG
-          with open(dmg_path, 'rb') as f:
-            data = f.read()
-
-          # Search for version in various formats
-          # 1. Look for "CFBundleShortVersionString" followed by version
-          # 2. Look for version string directly (bytes)
-          version_bytes = expected_version.encode('ascii')
-
-          # The plist might use comma-separated version (0,4,2) on macOS
-          comma_version = expected_version.replace('.', ',').encode('ascii')
-
-          found = False
-          found_version = None
-
-          # Try to find plist XML with version
-          patterns = [
-            rb'CFBundleShortVersionString[^<]*<string>([\d\.]+)</string>',
-            rb'CFBundleShortVersionString.*?' + version_bytes,
-            rb'>' + version_bytes + rb'<.*?CFBundle',
-          ]
-
-          for pattern in patterns:
-            matches = re.findall(pattern, data, re.DOTALL)
-            if matches:
-              for m in matches:
-                if isinstance(m, bytes):
-                  v = m.decode('ascii') if b'0' <= m[:1] <= b'9' else None
-                else:
-                  v = m
-                if v and re.match(r'^\d+\.\d+\.\d+$', v):
-                  found_version = v
-                  break
-            if found_version:
-              break
-
-          # If not found in XML, try comma format
-          if not found_version:
-            comma_pattern = rb'CFBundleShortVersionString[^<]*<string>([\d,]+)</string>'
-            matches = re.findall(comma_pattern, data)
-            for m in matches:
-              v = m.decode('ascii').replace(',', '.')
-              if re.match(r'^\d+\.\d+\.\d+$', v):
-                found_version = v
-                break
-
-          # Still not found? Try searching for the raw version bytes more loosely
-          if not found_version:
-            # Look for the version string appearing anywhere
-            idx = data.find(version_bytes)
-            if idx != -1:
-              # Get surrounding context
-              chunk = data[max(0, idx-100):idx+100]
-              print(f"Found version bytes at index {idx}, context: {chunk[:50]}...")
-              # Just confirm it's there
-              found = True
-              found_version = expected_version
-
-          if found_version:
-            print(f"Expected version: {expected_version}")
-            print(f"macOS artifact version: {found_version}")
-            if found_version != expected_version:
-              print(f"ERROR: macOS artifact version mismatch!")
-              sys.exit(1)
-            print("macOS version verified successfully")
-          else:
-            print(f"WARNING: Could not verify macOS version, skipping check")
-            print(f"(DMG version extraction requires tools not available on Ubuntu runner)")
-            # Don't fail the build, just warn
-          EOF
+          cd artifacts
+          7z x -y "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" -oextracted > /dev/null 2>&1 || true
+          find extracted -name "*.plist" | head -5 | while read plist; do
+            if plutil -p "$plist" 2>/dev/null | grep -q "CFBundleShortVersionString"; then
+              echo "Checking: $plist"
+              ARTIFACT_VERSION=$(plutil -p "$plist" 2>/dev/null | grep "CFBundleShortVersionString" -A1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+              if [ -n "$ARTIFACT_VERSION" ]; then
+                echo "Expected version: ${{ env.VERSION }}"
+                echo "macOS artifact version: $ARTIFACT_VERSION"
+                if [ "$ARTIFACT_VERSION" != "${{ env.VERSION }}" ]; then
+                  echo "ERROR: macOS artifact version mismatch!"
+                  exit 1
+                fi
+                echo "macOS version verified successfully"
+                exit 0
+              fi
+            fi
+          done
+          echo "WARNING: Could not verify macOS version from plist"
+          exit 1
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
