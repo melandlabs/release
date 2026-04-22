@@ -98,7 +98,9 @@ jobs:
       - name: Verify macOS artifact version
         run: |
           cd artifacts
-          7z x -y "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" -oextracted > /dev/null 2>&1 || true
+          7z l "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" || echo "7z cannot list DMG"
+          7z x -y "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" -oextracted || echo "7z extraction failed"
+          ls -la extracted/ || echo "No extracted directory"
           python3 << 'EOF'
           import plistlib
           import os
