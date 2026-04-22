@@ -95,52 +95,57 @@ jobs:
       - name: Install tools for DMG extraction
         run: sudo apt-get update && sudo apt-get install -y p7zip-full
 
+      - name: Install dmg2img for DMG extraction
+        run: sudo apt-get update && sudo apt-get install -y dmg2img
+
       - name: Verify macOS artifact version
         run: |
           cd artifacts
-          python3 << 'EOF'
-          import re
-          import sys
-          import zlib
+          # Convert DMG to raw img format
+          dmg2img "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" extracted.img || true
+          if [ -f extracted.img ]; then
+            python3 << 'EOF'
+            import plistlib
+            import re
+            import sys
 
-          dmg_path = "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
-          expected_version = "${{ env.VERSION }}"
+            img_path = "extracted.img"
+            expected_version = "${{ env.VERSION }}"
+            version_bytes = expected_version.encode('ascii')
 
-          with open(dmg_path, 'rb') as f:
-              data = f.read()
+            with open(img_path, 'rb') as f:
+                data = f.read()
 
-          print(f"File size: {len(data)} bytes", flush=True)
-          print(f"First 16 bytes (hex): {data[:16].hex()}", flush=True)
+            print(f"IMG size: {len(data)} bytes", flush=True)
+            print(f"Searching for version...", flush=True)
 
-          # Try raw bytes search first (fallback)
-          version_bytes = expected_version.encode('ascii')
-          idx = data.find(version_bytes)
-          if idx != -1:
-              ctx = data[max(0,idx-50):idx+50]
-              print(f"Found version bytes at {idx}: ...{ctx[:40]}...", flush=True)
-              print(f"macOS version verified (found {expected_version} in binary)", flush=True)
-              sys.exit(0)
+            # Search for version in raw bytes
+            idx = data.find(version_bytes)
+            if idx != -1:
+                print(f"Found version at index {idx}", flush=True)
+                print(f"macOS version verified successfully", flush=True)
+                sys.exit(0)
 
-          # Try zlib decompression
-          print("Trying zlib decompression...", flush=True)
-          try:
-              decompressed = zlib.decompress(data, -15)
-              print(f"Decompressed size: {len(decompressed)} bytes", flush=True)
-              print(f"Decompressed first 16 bytes: {decompressed[:16].hex()}", flush=True)
+            # Try to find plist XML patterns
+            patterns = [
+                rb'CFBundleShortVersionString[^<]*<string>([\d.]+)</string>',
+            ]
+            for pattern in patterns:
+                matches = re.findall(pattern, data, re.DOTALL)
+                for m in matches:
+                    v = m.decode('ascii') if isinstance(m, bytes) else m
+                    if re.match(r'^\d+\.\d+\.\d+$', v) and v == expected_version:
+                        print(f"Found version {v} via plist pattern", flush=True)
+                        print("macOS version verified successfully", flush=True)
+                        sys.exit(0)
 
-              # Search in decompressed data
-              idx = decompressed.find(version_bytes)
-              if idx != -1:
-                  ctx = decompressed[max(0,idx-50):idx+50]
-                  print(f"Found version at index {idx} in decompressed data", flush=True)
-                  print(f"macOS version verified (found {expected_version} in decompressed DMG)", flush=True)
-                  sys.exit(0)
-          except Exception as e:
-              print(f"Decompression error: {e}", flush=True)
-
-          print("ERROR: Could not verify macOS version from DMG", flush=True)
-          sys.exit(1)
-          EOF
+            print("ERROR: Could not verify macOS version", flush=True)
+            sys.exit(1)
+            EOF
+          else
+            echo "ERROR: dmg2img conversion failed"
+            exit 1
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
