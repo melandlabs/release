@@ -101,51 +101,24 @@ jobs:
       - name: Verify macOS artifact version
         run: |
           cd artifacts
-          # Convert DMG to raw img format
-          dmg2img "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" extracted.img || true
-          if [ -f extracted.img ]; then
-            python3 << 'EOF'
-            import plistlib
-            import re
-            import sys
-
-            img_path = "extracted.img"
-            expected_version = "${{ env.VERSION }}"
-            version_bytes = expected_version.encode('ascii')
-
-            with open(img_path, 'rb') as f:
-                data = f.read()
-
-            print(f"IMG size: {len(data)} bytes", flush=True)
-            print(f"Searching for version...", flush=True)
-
-            # Search for version in raw bytes
-            idx = data.find(version_bytes)
-            if idx != -1:
-                print(f"Found version at index {idx}", flush=True)
-                print(f"macOS version verified successfully", flush=True)
-                sys.exit(0)
-
-            # Try to find plist XML patterns
-            patterns = [
-                rb'CFBundleShortVersionString[^<]*<string>([\d.]+)</string>',
-            ]
-            for pattern in patterns:
-                matches = re.findall(pattern, data, re.DOTALL)
-                for m in matches:
-                    v = m.decode('ascii') if isinstance(m, bytes) else m
-                    if re.match(r'^\d+\.\d+\.\d+$', v) and v == expected_version:
-                        print(f"Found version {v} via plist pattern", flush=True)
-                        print("macOS version verified successfully", flush=True)
-                        sys.exit(0)
-
-            print("ERROR: Could not verify macOS version", flush=True)
-            sys.exit(1)
-            EOF
-          else
-            echo "ERROR: dmg2img conversion failed"
-            exit 1
-          fi
+          dmg2img "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" extracted.img
+          python3 -c "
+import re
+import sys
+img_path = 'extracted.img'
+expected_version = '${{ env.VERSION }}'
+version_bytes = expected_version.encode('ascii')
+with open(img_path, 'rb') as f:
+    data = f.read()
+print(f'IMG size: {len(data)} bytes')
+idx = data.find(version_bytes)
+if idx != -1:
+    print(f'Found version at index {idx}')
+    print('macOS version verified successfully')
+    sys.exit(0)
+print('ERROR: Could not verify macOS version')
+sys.exit(1)
+"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
