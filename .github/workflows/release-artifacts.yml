@@ -101,6 +101,7 @@ jobs:
           python3 << 'EOF'
           import re
           import sys
+          import zlib
 
           dmg_path = "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg"
           expected_version = "${{ env.VERSION }}"
@@ -111,44 +112,45 @@ jobs:
           print(f"File size: {len(data)} bytes")
           print(f"First 4 bytes (hex): {data[:4].hex()}")
 
-          # DMG files typically start with 'koly' (UDIF) or 'enc' (encrypted)
-          if data[:4] in [b'koly', b'encx']:
-              print("DMG is UDIF or encrypted format")
-          else:
-              print(f"Unknown DMG format, first bytes: {data[:16].hex()}")
+          # Try to decompress zlib data
+          try:
+              decompressed = zlib.decompress(data, -15)  # -15 for raw deflate
+              print(f"Decompressed size: {len(decompressed)} bytes")
+              print(f"Decompressed first 16 bytes: {decompressed[:16].hex()}")
 
-          # Search for plist XML patterns with version
+              # Search in decompressed data
+              version_bytes = expected_version.encode('ascii')
+              idx = decompressed.find(version_bytes)
+              if idx != -1:
+                  ctx = decompressed[max(0,idx-50):idx+50]
+                  print(f"Found version at index {idx} in decompressed data")
+                  print(f"Context: ...{ctx[:60]}...")
+                  print(f"macOS version verified (found {expected_version} in decompressed DMG)")
+                  sys.exit(0)
+
+              # Try to find plist patterns in decompressed data
+              patterns = [
+                  rb'CFBundleShortVersionString[^<]*<string>([\d.]+)</string>',
+              ]
+              for pattern in patterns:
+                  matches = re.findall(pattern, decompressed, re.DOTALL)
+                  for m in matches:
+                      v = m.decode('ascii') if isinstance(m, bytes) else m
+                      if re.match(r'^\d+\.\d+\.\d+$', v):
+                          print(f"Found version {v} in decompressed data")
+                          if v == expected_version:
+                              print("macOS version verified successfully")
+                              sys.exit(0)
+
+          except Exception as e:
+              print(f"Decompression failed: {e}")
+
+          # Try raw bytes search
           version_bytes = expected_version.encode('ascii')
-
-          # Pattern 1: CFBundleShortVersionString in plist XML
-          patterns = [
-              rb'CFBundleShortVersionString[^<]*<string>([\d.]+)</string>',
-          ]
-
-          for pattern in patterns:
-              matches = re.findall(pattern, data, re.DOTALL)
-              for m in matches:
-                  v = m.decode('ascii') if isinstance(m, bytes) else m
-                  if re.match(r'^\d+\.\d+\.\d+$', v):
-                      print(f"Found version {v} via pattern 1")
-                      if v == expected_version:
-                          print("macOS version verified successfully")
-                          sys.exit(0)
-
-          # Pattern 2: Look for version string in plist-like structures
-          # Comma format (0,4,2) often used in macOS plists
-          comma_version = expected_version.replace('.', ',').encode('ascii')
-          idx = data.find(comma_version)
-          if idx != -1:
-              ctx = data[max(0,idx-50):idx+50]
-              print(f"Found comma version at {idx}: ...{ctx}...")
-
-          # Pattern 3: Just find the raw version bytes
           idx = data.find(version_bytes)
           if idx != -1:
               ctx = data[max(0,idx-50):idx+50]
               print(f"Found version bytes at {idx}: ...{ctx[:40]}...")
-              # If we find it, assume it's correct (binary verification)
               print(f"macOS version verified (found {expected_version} in binary)")
               sys.exit(0)
 
