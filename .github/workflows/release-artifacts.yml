@@ -107,19 +107,25 @@ jobs:
           expected_version = "${{ env.VERSION }}"
           found = False
 
+          # Debug: list all extracted files
+          print("Extracted files:")
+          for root, dirs, files in os.walk("extracted"):
+              for f in files:
+                  print(f"  {os.path.join(root, f)}")
+
           for plist_path in glob.glob("extracted/**/*.plist", recursive=True):
+              print(f"Trying: {plist_path}")
               try:
                   with open(plist_path, 'rb') as f:
                       data = plistlib.load(f)
                   version = data.get('CFBundleShortVersionString')
+                  print(f"  Found version: {version}")
                   if version and version == expected_version:
-                      print(f"Found version in: {plist_path}")
-                      print(f"Expected version: {expected_version}")
-                      print(f"macOS artifact version: {version}")
-                      print("macOS version verified successfully")
+                      print(f"macOS version verified successfully: {version}")
                       found = True
                       break
-              except Exception:
+              except Exception as e:
+                  print(f"  Error: {e}")
                   continue
 
           if not found:
