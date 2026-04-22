@@ -93,30 +93,39 @@ jobs:
           echo "Linux version verified successfully"
 
       - name: Install tools for DMG extraction
-        run: sudo apt-get update && sudo apt-get install -y p7zip-full plutil
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
 
       - name: Verify macOS artifact version
         run: |
           cd artifacts
           7z x -y "Alloomi_${{ env.VERSION }}_macOS_aarch64.dmg" -oextracted > /dev/null 2>&1 || true
-          find extracted -name "*.plist" | head -5 | while read plist; do
-            if plutil -p "$plist" 2>/dev/null | grep -q "CFBundleShortVersionString"; then
-              echo "Checking: $plist"
-              ARTIFACT_VERSION=$(plutil -p "$plist" 2>/dev/null | grep "CFBundleShortVersionString" -A1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-              if [ -n "$ARTIFACT_VERSION" ]; then
-                echo "Expected version: ${{ env.VERSION }}"
-                echo "macOS artifact version: $ARTIFACT_VERSION"
-                if [ "$ARTIFACT_VERSION" != "${{ env.VERSION }}" ]; then
-                  echo "ERROR: macOS artifact version mismatch!"
-                  exit 1
-                fi
-                echo "macOS version verified successfully"
-                exit 0
-              fi
-            fi
-          done
-          echo "WARNING: Could not verify macOS version from plist"
-          exit 1
+          python3 << 'EOF'
+          import plistlib
+          import os
+          import glob
+
+          expected_version = "${{ env.VERSION }}"
+          found = False
+
+          for plist_path in glob.glob("extracted/**/*.plist", recursive=True):
+              try:
+                  with open(plist_path, 'rb') as f:
+                      data = plistlib.load(f)
+                  version = data.get('CFBundleShortVersionString')
+                  if version and version == expected_version:
+                      print(f"Found version in: {plist_path}")
+                      print(f"Expected version: {expected_version}")
+                      print(f"macOS artifact version: {version}")
+                      print("macOS version verified successfully")
+                      found = True
+                      break
+              except Exception:
+                  continue
+
+          if not found:
+              print("ERROR: Could not verify macOS version from plist")
+              exit(1)
+          EOF
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
