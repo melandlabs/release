@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installerSchema
+ManifestVersion: 1.5.0
+Version: 0.4.2
+Platform:
+  - Windows
+Architecture:
+  - x64
+InstallerType: exe
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+InstallerUrl: https://github.com/melandlabs/release/releases/download/v0.4.2/Alloomi_0.4.2_windows_amd64.exe
+InstallerSha256: b9fb5122769cc54c83040f3c0795e50901acb40b4b33949f92a05b2d41d31e9d
+InstallerSwitches:
+  Silent: /S
+  Interactive: /S
+ExpectedReturnCode:
+  SilenceInterruptExpected: 1223
+UpgradeBehavior: install
+ReleaseDate: "2026-04-21"

@@ -1,12 +1,12 @@
 cask "alloomi" do
   if Hardware::CPU.intel?
-    version "0.4.0"
-    sha256 "e1a50b3c9968fe7a223cdac8bb395a3a80382acfeab4592d51abe42b8e9cc027"
-    url "https://github.com/melandlabs/release/releases/download/v0.4.0/Alloomi_0.4.0_macOS_amd64.dmg"
+    version "0.4.2"
+    sha256 "0853688234adba60f8039692b46143d1e1be8c50554db0e0967308d6b40bc7b5"
+    url "https://github.com/melandlabs/release/releases/download/v0.4.2/Alloomi_0.4.2_macOS_amd64.dmg"
   else
-    version "0.4.0"
-    sha256 "a85ce9d48757a1877eafee0bba70636fda94e14c0f8a76f6cfafa2c0b90570e1"
-    url "https://github.com/melandlabs/release/releases/download/v0.4.0/Alloomi_0.4.0_macOS_aarch64.dmg"
+    version "0.4.2"
+    sha256 "342795209e2c21f784bd80ee281f44d3b92ded99979fcd4905912d59a555b44f"
+    url "https://github.com/melandlabs/release/releases/download/v0.4.2/Alloomi_0.4.2_macOS_aarch64.dmg"
   end
 
   name "Alloomi"
