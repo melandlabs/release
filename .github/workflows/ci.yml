@@ -182,6 +182,28 @@ jobs:
 
           echo "✅ App bundle signed"
 
+      - name: Staple app bundle
+        if: env.SKIP_SIGNING != 'true'
+        run: |
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          echo "Stapling app bundle: $APP_BUNDLE"
+
+          for i in $(seq 1 10); do
+            if xcrun stapler staple "$APP_BUNDLE" 2>&1; then
+              echo "✅ App bundle stapled successfully on attempt $i"
+              break
+            else
+              echo "Staple failed, waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          done
+
+          if xcrun stapler validate "$APP_BUNDLE" 2>&1; then
+            echo "✅ App bundle validated"
+          else
+            echo "⚠️  App bundle validation failed - Gatekeeper may still block the app"
+          fi
+
       - name: Create DMG
         run: |
           mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
@@ -444,6 +466,28 @@ jobs:
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
 
           echo "✅ App bundle signed"
+
+      - name: Staple app bundle
+        if: env.SKIP_SIGNING != 'true'
+        run: |
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          echo "Stapling app bundle: $APP_BUNDLE"
+
+          for i in $(seq 1 10); do
+            if xcrun stapler staple "$APP_BUNDLE" 2>&1; then
+              echo "✅ App bundle stapled successfully on attempt $i"
+              break
+            else
+              echo "Staple failed, waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          done
+
+          if xcrun stapler validate "$APP_BUNDLE" 2>&1; then
+            echo "✅ App bundle validated"
+          else
+            echo "⚠️  App bundle validation failed - Gatekeeper may still block the app"
+          fi
 
       - name: Create DMG
         run: |
