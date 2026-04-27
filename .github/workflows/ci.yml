@@ -182,56 +182,6 @@ jobs:
 
           echo "✅ App bundle signed"
 
-      - name: Notarize and staple app bundle
-        if: env.SKIP_SIGNING != 'true'
-        timeout-minutes: 120
-        run: |
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          echo "Notarizing app bundle: $APP_BUNDLE"
-
-          # Submit app bundle for notarization
-          OUTPUT=$(xcrun notarytool submit "$APP_BUNDLE" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
-          echo "$OUTPUT"
-
-          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
-          if [ -z "$SUBMISSION_ID" ]; then
-            echo "❌ Failed to get submission ID"
-            exit 1
-          fi
-          echo "App bundle submission ID: $SUBMISSION_ID"
-
-          # Wait for notarization
-          if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1; then
-            echo "✅ App bundle notarization accepted!"
-          else
-            echo "❌ App bundle notarization failed"
-            exit 1
-          fi
-
-          # Staple the notarization ticket to app bundle
-          for i in $(seq 1 10); do
-            if xcrun stapler staple "$APP_BUNDLE" 2>&1; then
-              echo "✅ App bundle stapled successfully on attempt $i"
-              break
-            else
-              echo "Staple failed, waiting 30 seconds before retry..."
-              sleep 30
-            fi
-          done
-
-          if xcrun stapler validate "$APP_BUNDLE" 2>&1; then
-            echo "✅ App bundle validated"
-          else
-            echo "⚠️  App bundle validation failed"
-            exit 1
-          fi
-
       - name: Create DMG
         run: |
           mkdir -p ./alloomi/apps/web/src-tauri/target/release/bundle/dmg
@@ -494,56 +444,6 @@ jobs:
           codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
 
           echo "✅ App bundle signed"
-
-      - name: Notarize and staple app bundle
-        if: env.SKIP_SIGNING != 'true'
-        timeout-minutes: 120
-        run: |
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          echo "Notarizing app bundle: $APP_BUNDLE"
-
-          # Submit app bundle for notarization
-          OUTPUT=$(xcrun notarytool submit "$APP_BUNDLE" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
-          echo "$OUTPUT"
-
-          SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
-          if [ -z "$SUBMISSION_ID" ]; then
-            echo "❌ Failed to get submission ID"
-            exit 1
-          fi
-          echo "App bundle submission ID: $SUBMISSION_ID"
-
-          # Wait for notarization
-          if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1; then
-            echo "✅ App bundle notarization accepted!"
-          else
-            echo "❌ App bundle notarization failed"
-            exit 1
-          fi
-
-          # Staple the notarization ticket to app bundle
-          for i in $(seq 1 10); do
-            if xcrun stapler staple "$APP_BUNDLE" 2>&1; then
-              echo "✅ App bundle stapled successfully on attempt $i"
-              break
-            else
-              echo "Staple failed, waiting 30 seconds before retry..."
-              sleep 30
-            fi
-          done
-
-          if xcrun stapler validate "$APP_BUNDLE" 2>&1; then
-            echo "✅ App bundle validated"
-          else
-            echo "⚠️  App bundle validation failed"
-            exit 1
-          fi
 
       - name: Create DMG
         run: |
