@@ -663,11 +663,20 @@ jobs:
 
         EOF
 
+    - name: Patch tauri.conf.json to skip AppImage on Linux
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e "
+          const fs = require('fs');
+          const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          c.bundle.targets = ['deb'];
+          fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
+          console.log('Patched targets to deb');
+        "
+
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
-      env:
-        TAURI_BUNDLE_TARGET: deb
 
     - name: Upload CI Linux binary
       uses: actions/upload-artifact@v4
@@ -928,12 +937,21 @@ jobs:
         IS_TAURI=true
   
         EOF
-  
+
+    - name: Patch tauri.conf.json to skip AppImage on Linux ARM64
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e "
+          const fs = require('fs');
+          const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          c.bundle.targets = ['deb'];
+          fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
+          console.log('Patched targets to deb');
+        "
+
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
-      env:
-        TAURI_BUNDLE_TARGET: deb
   
     - name: Upload CI Linux ARM64 binary
       uses: actions/upload-artifact@v4
