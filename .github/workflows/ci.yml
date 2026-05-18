@@ -602,7 +602,8 @@ jobs:
           libxdo-dev \
           libxkbcommon-dev \
           libssl-dev \
-          build-essential
+          build-essential \
+          libpipewire-0.3-dev
 
     - name: Get pnpm store directory
       run: |
@@ -880,7 +881,8 @@ jobs:
           libxkbcommon-dev \
           libssl-dev \
           build-essential \
-          xdg-utils
+          xdg-utils \
+          libpipewire-0.3-dev
   
     - name: Get pnpm store directory
       run: |
