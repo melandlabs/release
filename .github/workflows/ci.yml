@@ -601,7 +601,8 @@ jobs:
           libxkbcommon-dev \
           libssl-dev \
           build-essential \
-          libpipewire-0.3-dev
+          libpipewire-0.3-dev \
+          libasound2-dev
 
     - name: Get pnpm store directory
       run: |
@@ -877,8 +878,9 @@ jobs:
           libssl-dev \
           build-essential \
           xdg-utils \
-          libpipewire-0.3-dev
-  
+          libpipewire-0.3-dev \
+          libasound2-dev
+
     - name: Get pnpm store directory
       run: |
         echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
