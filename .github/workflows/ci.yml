@@ -85,11 +85,10 @@ jobs:
         working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Rebuild native modules for Tauri
+      - name: Install better-sqlite3 prebuilt binary
         working-directory: ./alloomi
         run: |
-          pnpm rebuild better-sqlite3
-          # Copy the compiled .node into imessage-kit's nested better-sqlite3
+          pnpm install better-sqlite3
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -346,12 +345,12 @@ jobs:
         working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Rebuild native modules for Tauri (x86_64)
+      - name: Install better-sqlite3 prebuilt binary (x86_64)
         working-directory: ./alloomi
         env:
           npm_config_arch: x64
         run: |
-          pnpm rebuild better-sqlite3
+          pnpm install better-sqlite3
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -620,10 +619,10 @@ jobs:
       working-directory: ./alloomi
       run: pnpm install --frozen-lockfile --ignore-scripts
 
-    - name: Rebuild native modules for Tauri
+    - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
-        pnpm rebuild better-sqlite3
+        pnpm install better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -751,11 +750,11 @@ jobs:
       shell: bash
       run: pnpm install --frozen-lockfile --ignore-scripts
 
-    - name: Rebuild native modules for Tauri
+    - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       shell: bash
       run: |
-        pnpm rebuild better-sqlite3
+        pnpm install better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -896,14 +895,14 @@ jobs:
       working-directory: ./alloomi
       run: pnpm install --frozen-lockfile --ignore-scripts
   
-    - name: Rebuild native modules for Tauri
+    - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
-        pnpm rebuild better-sqlite3
+        pnpm install better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
-  
+
     - name: Verify native modules are built
       working-directory: ./alloomi
       run: |
