@@ -176,8 +176,10 @@ jobs:
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Signing app bundle: $APP_BUNDLE"
 
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
+          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" \
+            --entitlements "./alloomi/apps/web/src-tauri/entitlements.plist" \
+            --options runtime --timestamp \
+            "$APP_BUNDLE"
 
           echo "✅ App bundle signed"
 
@@ -439,8 +441,10 @@ jobs:
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           echo "Signing app bundle: $APP_BUNDLE"
 
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE"
-          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE/Contents/MacOS/alloomi"
+          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" \
+            --entitlements "./alloomi/apps/web/src-tauri/entitlements.plist" \
+            --options runtime --timestamp \
+            "$APP_BUNDLE"
 
           echo "✅ App bundle signed"
 
