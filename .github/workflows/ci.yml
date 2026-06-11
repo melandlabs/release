@@ -134,6 +134,7 @@ jobs:
       - name: Import Apple Certificate and Intermediate Certificates
         if: env.SKIP_SIGNING != 'true'
         env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
         run: |
@@ -161,6 +162,7 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
@@ -392,6 +394,7 @@ jobs:
       - name: Import Apple Certificate and Intermediate Certificates
         if: env.SKIP_SIGNING != 'true'
         env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
         run: |
@@ -426,6 +429,7 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
