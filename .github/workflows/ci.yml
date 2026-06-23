@@ -185,32 +185,48 @@ jobs:
 
           echo "✅ App bundle signed"
 
-      - name: Create DMG (reuse beautified DMG from tauri:build)
+      - name: Create DMG (beautified, from signed app)
         run: |
           set -e
+
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           DMG_DIR="./alloomi/apps/web/src-tauri/target/release/bundle/dmg"
+          SRC_TAURI="./alloomi/apps/web/src-tauri"
+          mkdir -p "$DMG_DIR"
 
-          # Read version from the SAME source beautify-dmg.js uses, so the
-          # filename we look for always matches what `tauri:build` produced.
+          # CRITICAL: this step runs AFTER `Sign app bundle`, so $APP_BUNDLE
+          # already carries the Developer ID signature. beautify-dmg.js only
+          # `cp -R`s the .app into the DMG (never modifies its contents), so the
+          # signature survives intact → notarization can cover the inner .app →
+          # no more "已损坏，无法打开" on install. (Previously we copied the DMG
+          # tauri:build emitted, whose inner .app was signed BEFORE the Developer
+          # ID step, so the DMG shipped an unsigned ad-hoc .app.)
+          echo "Verifying app signature before packing DMG..."
+          codesign -dv "$APP_BUNDLE" 2>&1 | head -5
+
+          # Drop any DMG tauri:build left behind so the glob below is unambiguous.
+          rm -f "$DMG_DIR"/Alloomi*.dmg
+
+          # Regenerate the beautified DMG against the SIGNED .app. The script
+          # auto-discovers appPath + outDmg from target/release/bundle, reads the
+          # version from tauri.conf.json, and emits Alloomi_<version>_aarch64.dmg.
+          # Under CI (env CI=true) it uses the committed .DS_Store template
+          # (resources/dmg_DS_Store) since the runner has no Finder/Aqua session.
+          pushd "$SRC_TAURI" >/dev/null
+          node scripts/beautify-dmg.js
+          popd >/dev/null
+
           VERSION=$(node -p "require('./alloomi/apps/web/src-tauri/tauri.conf.json').version")
-          echo "App version: $VERSION"
-
-          # beautify-dmg.js (run inside `tauri:build` -> optimize-tauri-bundle.js)
-          # already emitted a beautified, UDZO-compressed DMG. We copy it under
-          # the CI naming convention instead of re-creating a bare DMG (which
-          # would lose the background image + icon layout).
           BEAUTIFIED_DMG="$DMG_DIR/Alloomi_${VERSION}_aarch64.dmg"
 
           if [ ! -f "$BEAUTIFIED_DMG" ]; then
             echo "❌ Beautified DMG not found: $BEAUTIFIED_DMG"
-            echo "   Contents of $DMG_DIR:"
             ls -la "$DMG_DIR" 2>/dev/null || true
             exit 1
           fi
 
-          # Guard against optimize-tauri-bundle.js swallowing beautification
-          # failures as non-fatal: a leftover DMG with no .background/ means
-          # beautify-dmg.js never ran successfully.
+          # Guard against beautify-dmg.js failing silently: a DMG with no
+          # .background/ means the layout never landed.
           ATTACH=$(hdiutil attach -nobrowse -noverify "$BEAUTIFIED_DMG" | grep -o '/Volumes/Alloomi.*' | tail -1)
           if [ -z "$ATTACH" ] || [ ! -d "$ATTACH/.background" ]; then
             echo "❌ DMG has no .background/ — beautification did not run"
@@ -219,19 +235,13 @@ jobs:
           fi
           hdiutil detach "$ATTACH" -force
 
+          # Rename to the CI convention; downstream Notarize/Staple/Upload glob
+          # Alloomi*.dmg, so we leave exactly ONE DMG in dmg/.
           COMMIT_SHA=$(cd alloomi && git rev-parse --short HEAD)
           DMG_PATH="$DMG_DIR/Alloomi_ci_${COMMIT_SHA}_aarch64.dmg"
+          mv "$BEAUTIFIED_DMG" "$DMG_PATH"
 
-          rm -f "$DMG_PATH"
-          cp "$BEAUTIFIED_DMG" "$DMG_PATH"
-
-          # Remove the beautified original so the dmg/ dir holds exactly ONE
-          # DMG (the CI-named one). This keeps the downstream Notarize/Staple/
-          # Upload steps' `Alloomi*.dmg` glob matching a single file — no need
-          # to touch any downstream step when switching to the beautified DMG.
-          rm -f "$BEAUTIFIED_DMG"
-
-          echo "✅ Beautified DMG copied to: $DMG_PATH"
+          echo "✅ Beautified DMG (from signed app) at: $DMG_PATH"
           ls -la "$DMG_PATH"
 
       - name: Notarize DMG
@@ -478,32 +488,48 @@ jobs:
 
           echo "✅ App bundle signed"
 
-      - name: Create DMG (reuse beautified DMG from tauri:build)
+      - name: Create DMG (beautified, from signed app)
         run: |
           set -e
+
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
           DMG_DIR="./alloomi/apps/web/src-tauri/target/release/bundle/dmg"
+          SRC_TAURI="./alloomi/apps/web/src-tauri"
+          mkdir -p "$DMG_DIR"
 
-          # Read version from the SAME source beautify-dmg.js uses, so the
-          # filename we look for always matches what `tauri:build` produced.
+          # CRITICAL: this step runs AFTER `Sign app bundle`, so $APP_BUNDLE
+          # already carries the Developer ID signature. beautify-dmg.js only
+          # `cp -R`s the .app into the DMG (never modifies its contents), so the
+          # signature survives intact → notarization can cover the inner .app →
+          # no more "已损坏，无法打开" on install. (Previously we copied the DMG
+          # tauri:build emitted, whose inner .app was signed BEFORE the Developer
+          # ID step, so the DMG shipped an unsigned ad-hoc .app.)
+          echo "Verifying app signature before packing DMG..."
+          codesign -dv "$APP_BUNDLE" 2>&1 | head -5
+
+          # Drop any DMG tauri:build left behind so the glob below is unambiguous.
+          rm -f "$DMG_DIR"/Alloomi*.dmg
+
+          # Regenerate the beautified DMG against the SIGNED .app. The script
+          # auto-discovers appPath + outDmg from target/release/bundle, reads the
+          # version from tauri.conf.json, and emits Alloomi_<version>_x64.dmg.
+          # Under CI (env CI=true) it uses the committed .DS_Store template
+          # (resources/dmg_DS_Store) since the runner has no Finder/Aqua session.
+          pushd "$SRC_TAURI" >/dev/null
+          node scripts/beautify-dmg.js
+          popd >/dev/null
+
           VERSION=$(node -p "require('./alloomi/apps/web/src-tauri/tauri.conf.json').version")
-          echo "App version: $VERSION"
-
-          # beautify-dmg.js (run inside `tauri:build` -> optimize-tauri-bundle.js)
-          # already emitted a beautified, UDZO-compressed DMG. We copy it under
-          # the CI naming convention instead of re-creating a bare DMG (which
-          # would lose the background image + icon layout).
           BEAUTIFIED_DMG="$DMG_DIR/Alloomi_${VERSION}_x64.dmg"
 
           if [ ! -f "$BEAUTIFIED_DMG" ]; then
             echo "❌ Beautified DMG not found: $BEAUTIFIED_DMG"
-            echo "   Contents of $DMG_DIR:"
             ls -la "$DMG_DIR" 2>/dev/null || true
             exit 1
           fi
 
-          # Guard against optimize-tauri-bundle.js swallowing beautification
-          # failures as non-fatal: a leftover DMG with no .background/ means
-          # beautify-dmg.js never ran successfully.
+          # Guard against beautify-dmg.js failing silently: a DMG with no
+          # .background/ means the layout never landed.
           ATTACH=$(hdiutil attach -nobrowse -noverify "$BEAUTIFIED_DMG" | grep -o '/Volumes/Alloomi.*' | tail -1)
           if [ -z "$ATTACH" ] || [ ! -d "$ATTACH/.background" ]; then
             echo "❌ DMG has no .background/ — beautification did not run"
@@ -512,19 +538,13 @@ jobs:
           fi
           hdiutil detach "$ATTACH" -force
 
+          # Rename to the CI convention; downstream Notarize/Staple/Upload glob
+          # Alloomi*.dmg, so we leave exactly ONE DMG in dmg/.
           COMMIT_SHA=$(cd alloomi && git rev-parse --short HEAD)
           DMG_PATH="$DMG_DIR/Alloomi_ci_${COMMIT_SHA}_x64.dmg"
+          mv "$BEAUTIFIED_DMG" "$DMG_PATH"
 
-          rm -f "$DMG_PATH"
-          cp "$BEAUTIFIED_DMG" "$DMG_PATH"
-
-          # Remove the beautified original so the dmg/ dir holds exactly ONE
-          # DMG (the CI-named one). This keeps the downstream Notarize/Staple/
-          # Upload steps' `Alloomi*.dmg` glob matching a single file — no need
-          # to touch any downstream step when switching to the beautified DMG.
-          rm -f "$BEAUTIFIED_DMG"
-
-          echo "✅ Beautified DMG copied to: $DMG_PATH"
+          echo "✅ Beautified DMG (from signed app) at: $DMG_PATH"
           ls -la "$DMG_PATH"
 
       - name: Notarize DMG
