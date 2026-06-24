@@ -267,29 +267,62 @@ jobs:
 
           codesign -dv "$DMG_PATH" 2>&1 | head -5
 
-          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
+          APPLE_ID="${{ secrets.ED_APPLE_ID }}"
+          APPLE_PASSWORD="${{ secrets.ED_APPLE_PASSWORD }}"
+          APPLE_TEAM_ID="${{ secrets.ED_APPLE_TEAM_ID }}"
 
+          # `set -e` (default for GitHub Actions `run:` blocks) aborts the whole
+          # script on a failing command substitution, so a failed `notarytool
+          # submit` would exit BEFORE the `echo "$OUTPUT"` that prints its error
+          # — leaving only "Signature size=9045" then "exit 1" in the log. Run
+          # submit under `set +e` and capture output without aborting, so the
+          # real notarytool error (auth failure, code rejection, etc.) always
+          # surfaces.
+          set +e
+          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" 2>&1)
+          SUBMIT_EXIT=$?
+          set -e
+
+          echo "----- notarytool submit output (exit=$SUBMIT_EXIT) -----"
           echo "$OUTPUT"
+          echo "--------------------------------------------------------"
+
+          if [ "$SUBMIT_EXIT" -ne 0 ]; then
+            echo "❌ notarytool submit failed (exit=$SUBMIT_EXIT). See output above."
+            exit 1
+          fi
 
           SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
           if [ -z "$SUBMISSION_ID" ]; then
-            echo "❌ Failed to get submission ID"
+            echo "❌ notarytool submit returned no submission id. See output above."
             exit 1
           fi
 
           echo "Submission ID: $SUBMISSION_ID"
 
           echo "Waiting for notarization to complete..."
-          if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1; then
+          set +e
+          xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" 2>&1
+          WAIT_EXIT=$?
+          set -e
+
+          if [ "$WAIT_EXIT" -eq 0 ]; then
             echo "✅ Notarization accepted!"
           else
-            echo "❌ Notarization failed"
+            echo "❌ Notarization rejected. Fetching Apple's detailed log..."
+            # The Apple-side log explains exactly why the DMG/.app was rejected
+            # (e.g. "the binary is not signed", "code failed to satisfy
+            # designated code requirement"). This is the decisive diagnostic.
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" 2>&1 || true
             exit 1
           fi
 
@@ -584,29 +617,62 @@ jobs:
 
           codesign -dv "$DMG_PATH" 2>&1 | head -5
 
-          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1)
+          APPLE_ID="${{ secrets.ED_APPLE_ID }}"
+          APPLE_PASSWORD="${{ secrets.ED_APPLE_PASSWORD }}"
+          APPLE_TEAM_ID="${{ secrets.ED_APPLE_TEAM_ID }}"
 
+          # `set -e` (default for GitHub Actions `run:` blocks) aborts the whole
+          # script on a failing command substitution, so a failed `notarytool
+          # submit` would exit BEFORE the `echo "$OUTPUT"` that prints its error
+          # — leaving only "Signature size=9045" then "exit 1" in the log. Run
+          # submit under `set +e` and capture output without aborting, so the
+          # real notarytool error (auth failure, code rejection, etc.) always
+          # surfaces.
+          set +e
+          OUTPUT=$(xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" 2>&1)
+          SUBMIT_EXIT=$?
+          set -e
+
+          echo "----- notarytool submit output (exit=$SUBMIT_EXIT) -----"
           echo "$OUTPUT"
+          echo "--------------------------------------------------------"
+
+          if [ "$SUBMIT_EXIT" -ne 0 ]; then
+            echo "❌ notarytool submit failed (exit=$SUBMIT_EXIT). See output above."
+            exit 1
+          fi
 
           SUBMISSION_ID=$(echo "$OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
           if [ -z "$SUBMISSION_ID" ]; then
-            echo "❌ Failed to get submission ID"
+            echo "❌ notarytool submit returned no submission id. See output above."
             exit 1
           fi
 
           echo "Submission ID: $SUBMISSION_ID"
 
           echo "Waiting for notarization to complete..."
-          if xcrun notarytool wait "$SUBMISSION_ID" \
-            --apple-id "${{ secrets.ED_APPLE_ID }}" \
-            --password "${{ secrets.ED_APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.ED_APPLE_TEAM_ID }}" 2>&1; then
+          set +e
+          xcrun notarytool wait "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" 2>&1
+          WAIT_EXIT=$?
+          set -e
+
+          if [ "$WAIT_EXIT" -eq 0 ]; then
             echo "✅ Notarization accepted!"
           else
-            echo "❌ Notarization failed"
+            echo "❌ Notarization rejected. Fetching Apple's detailed log..."
+            # The Apple-side log explains exactly why the DMG/.app was rejected
+            # (e.g. "the binary is not signed", "code failed to satisfy
+            # designated code requirement"). This is the decisive diagnostic.
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" 2>&1 || true
             exit 1
           fi
 
