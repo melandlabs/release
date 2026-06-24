@@ -186,6 +186,11 @@ jobs:
           echo "✅ App bundle signed"
 
       - name: Create DMG (beautified, from signed app)
+        env:
+          # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
+          # NOT inherited across steps), so we must re-inject it here to sign
+          # the DMG container after `Sign app bundle` already consumed it.
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
 
@@ -498,6 +503,11 @@ jobs:
           echo "✅ App bundle signed"
 
       - name: Create DMG (beautified, from signed app)
+        env:
+          # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
+          # NOT inherited across steps), so we must re-inject it here to sign
+          # the DMG container after `Sign app bundle` already consumed it.
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
 
