@@ -135,8 +135,8 @@ jobs:
         if: env.SKIP_SIGNING != 'true'
         env:
           MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
         run: |
           # Create a new keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
@@ -163,16 +163,16 @@ jobs:
         run: pnpm tauri:build
         env:
           MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+          SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
       - name: Sign app bundle with Developer ID
         if: env.SKIP_SIGNING != 'true'
         env:
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
@@ -190,7 +190,7 @@ jobs:
           # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
           # NOT inherited across steps), so we must re-inject it here to sign
           # the DMG container after `Sign app bundle` already consumed it.
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
 
@@ -267,9 +267,9 @@ jobs:
 
           codesign -dv "$DMG_PATH" 2>&1 | head -5
 
-          APPLE_ID="${{ secrets.APPLE_ID }}"
-          APPLE_PASSWORD="${{ secrets.APPLE_PASSWORD }}"
-          APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          APPLE_ID="${{ secrets.ED_APPLE_ID }}"
+          APPLE_PASSWORD="${{ secrets.ED_APPLE_PASSWORD }}"
+          APPLE_TEAM_ID="${{ secrets.ED_APPLE_TEAM_ID }}"
 
           # `set -e` (default for GitHub Actions `run:` blocks) aborts the whole
           # script on a failing command substitution, so a failed `notarytool
@@ -305,16 +305,18 @@ jobs:
 
           echo "Waiting for notarization to complete..."
           set +e
-          xcrun notarytool wait "$SUBMISSION_ID" \
+          WAIT_OUTPUT=$(xcrun notarytool wait "$SUBMISSION_ID" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" 2>&1
+            --team-id "$APPLE_TEAM_ID" 2>&1)
           WAIT_EXIT=$?
           set -e
 
-          if [ "$WAIT_EXIT" -eq 0 ]; then
-            echo "✅ Notarization accepted!"
-          else
+          echo "----- notarytool wait output (exit=$WAIT_EXIT) -----"
+          echo "$WAIT_OUTPUT"
+          echo "--------------------------------------------------------"
+
+          if echo "$WAIT_OUTPUT" | grep -q "status: Rejected"; then
             echo "❌ Notarization rejected. Fetching Apple's detailed log..."
             # The Apple-side log explains exactly why the DMG/.app was rejected
             # (e.g. "the binary is not signed", "code failed to satisfy
@@ -323,6 +325,11 @@ jobs:
               --apple-id "$APPLE_ID" \
               --password "$APPLE_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" 2>&1 || true
+            exit 1
+          elif echo "$WAIT_OUTPUT" | grep -q "status: Accepted"; then
+            echo "✅ Notarization accepted!"
+          else
+            echo "❌ Notarization status unclear (exit=$WAIT_EXIT). See output above."
             exit 1
           fi
 
@@ -478,8 +485,8 @@ jobs:
         if: env.SKIP_SIGNING != 'true'
         env:
           MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           security create-keychain -p "" $KEYCHAIN_PATH
@@ -513,16 +520,16 @@ jobs:
         run: pnpm tauri:build
         env:
           MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
+          SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
       - name: Sign app bundle with Developer ID
         if: env.SKIP_SIGNING != 'true'
         env:
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
@@ -540,7 +547,7 @@ jobs:
           # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
           # NOT inherited across steps), so we must re-inject it here to sign
           # the DMG container after `Sign app bundle` already consumed it.
-          APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
 
@@ -617,9 +624,9 @@ jobs:
 
           codesign -dv "$DMG_PATH" 2>&1 | head -5
 
-          APPLE_ID="${{ secrets.APPLE_ID }}"
-          APPLE_PASSWORD="${{ secrets.APPLE_PASSWORD }}"
-          APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          APPLE_ID="${{ secrets.ED_APPLE_ID }}"
+          APPLE_PASSWORD="${{ secrets.ED_APPLE_PASSWORD }}"
+          APPLE_TEAM_ID="${{ secrets.ED_APPLE_TEAM_ID }}"
 
           # `set -e` (default for GitHub Actions `run:` blocks) aborts the whole
           # script on a failing command substitution, so a failed `notarytool
@@ -655,16 +662,18 @@ jobs:
 
           echo "Waiting for notarization to complete..."
           set +e
-          xcrun notarytool wait "$SUBMISSION_ID" \
+          WAIT_OUTPUT=$(xcrun notarytool wait "$SUBMISSION_ID" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" 2>&1
+            --team-id "$APPLE_TEAM_ID" 2>&1)
           WAIT_EXIT=$?
           set -e
 
-          if [ "$WAIT_EXIT" -eq 0 ]; then
-            echo "✅ Notarization accepted!"
-          else
+          echo "----- notarytool wait output (exit=$WAIT_EXIT) -----"
+          echo "$WAIT_OUTPUT"
+          echo "--------------------------------------------------------"
+
+          if echo "$WAIT_OUTPUT" | grep -q "status: Rejected"; then
             echo "❌ Notarization rejected. Fetching Apple's detailed log..."
             # The Apple-side log explains exactly why the DMG/.app was rejected
             # (e.g. "the binary is not signed", "code failed to satisfy
@@ -673,6 +682,11 @@ jobs:
               --apple-id "$APPLE_ID" \
               --password "$APPLE_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" 2>&1 || true
+            exit 1
+          elif echo "$WAIT_OUTPUT" | grep -q "status: Accepted"; then
+            echo "✅ Notarization accepted!"
+          else
+            echo "❌ Notarization status unclear (exit=$WAIT_EXIT). See output above."
             exit 1
           fi
 
