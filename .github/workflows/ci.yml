@@ -241,6 +241,15 @@ jobs:
           DMG_PATH="$DMG_DIR/Alloomi_ci_${COMMIT_SHA}_aarch64.dmg"
           mv "$BEAUTIFIED_DMG" "$DMG_PATH"
 
+          # Sign the DMG *container* itself. notarytool requires the submitted
+          # DMG (not just the inner .app) to carry a Developer ID signature;
+          # otherwise `xcrun notarytool submit` fails with
+          # "code object is not signed at all". beautify-dmg.js only `hdiutil`s
+          # the already-signed .app into the DMG and never signs the DMG, so we
+          # add it here: Sign app → pack DMG → sign DMG → notarize → staple.
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
+          codesign -dv "$DMG_PATH" 2>&1 | head -5
+
           echo "✅ Beautified DMG (from signed app) at: $DMG_PATH"
           ls -la "$DMG_PATH"
 
@@ -543,6 +552,15 @@ jobs:
           COMMIT_SHA=$(cd alloomi && git rev-parse --short HEAD)
           DMG_PATH="$DMG_DIR/Alloomi_ci_${COMMIT_SHA}_x64.dmg"
           mv "$BEAUTIFIED_DMG" "$DMG_PATH"
+
+          # Sign the DMG *container* itself. notarytool requires the submitted
+          # DMG (not just the inner .app) to carry a Developer ID signature;
+          # otherwise `xcrun notarytool submit` fails with
+          # "code object is not signed at all". beautify-dmg.js only `hdiutil`s
+          # the already-signed .app into the DMG and never signs the DMG, so we
+          # add it here: Sign app → pack DMG → sign DMG → notarize → staple.
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
+          codesign -dv "$DMG_PATH" 2>&1 | head -5
 
           echo "✅ Beautified DMG (from signed app) at: $DMG_PATH"
           ls -la "$DMG_PATH"
