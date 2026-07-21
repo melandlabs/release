@@ -88,7 +88,7 @@ jobs:
       - name: Install better-sqlite3 prebuilt binary
         working-directory: ./alloomi
         run: |
-          pnpm install -w better-sqlite3
+          pnpm install -w better-sqlite3@12.11.1
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -444,7 +444,7 @@ jobs:
         env:
           npm_config_arch: x64
         run: |
-          pnpm install -w better-sqlite3
+          pnpm install -w better-sqlite3@12.11.1
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -811,7 +811,7 @@ jobs:
     - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
-        pnpm install -w better-sqlite3
+        pnpm install -w better-sqlite3@12.11.1
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -943,7 +943,7 @@ jobs:
       working-directory: ./alloomi
       shell: bash
       run: |
-        pnpm install -w better-sqlite3
+        pnpm install -w better-sqlite3@12.11.1
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -1088,7 +1088,7 @@ jobs:
     - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
-        pnpm install -w better-sqlite3
+        pnpm install -w better-sqlite3@12.11.1
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
