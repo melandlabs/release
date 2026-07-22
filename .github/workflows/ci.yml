@@ -171,27 +171,18 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
-      - name: Sign app bundle with Developer ID
+      - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
-        env:
-          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          echo "Signing app bundle: $APP_BUNDLE"
-
-          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" \
-            --entitlements "./alloomi/apps/web/src-tauri/entitlements.plist" \
-            --options runtime --timestamp \
-            "$APP_BUNDLE"
-
-          echo "✅ App bundle signed"
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+          echo "✅ App bundle signatures verified"
 
       - name: Create DMG (beautified, from signed app)
         env:
-          # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
-          # NOT inherited across steps), so we must re-inject it here to sign
-          # the DMG container after `Sign app bundle` already consumed it.
+          # Build-step env is scoped per-step, so re-inject the identity used
+          # to sign the DMG container itself.
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
@@ -201,8 +192,8 @@ jobs:
           SRC_TAURI="./alloomi/apps/web/src-tauri"
           mkdir -p "$DMG_DIR"
 
-          # CRITICAL: this step runs AFTER `Sign app bundle`, so $APP_BUNDLE
-          # already carries the Developer ID signature. beautify-dmg.js only
+          # optimize-tauri-bundle.js has already finalized $APP_BUNDLE using
+          # Alloomi's inside-out signer. beautify-dmg.js only
           # `cp -R`s the .app into the DMG (never modifies its contents), so the
           # signature survives intact → notarization can cover the inner .app →
           # no more "已损坏，无法打开" on install. (Previously we copied the DMG
@@ -528,27 +519,18 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
-      - name: Sign app bundle with Developer ID
+      - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
-        env:
-          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
           APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          echo "Signing app bundle: $APP_BUNDLE"
-
-          codesign --deep --force --sign "$APPLE_SIGNING_IDENTITY" \
-            --entitlements "./alloomi/apps/web/src-tauri/entitlements.plist" \
-            --options runtime --timestamp \
-            "$APP_BUNDLE"
-
-          echo "✅ App bundle signed"
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+          echo "✅ App bundle signatures verified"
 
       - name: Create DMG (beautified, from signed app)
         env:
-          # APPLE_SIGNING_IDENTITY is scoped per-step (GitHub Actions `env:` is
-          # NOT inherited across steps), so we must re-inject it here to sign
-          # the DMG container after `Sign app bundle` already consumed it.
+          # Build-step env is scoped per-step, so re-inject the identity used
+          # to sign the DMG container itself.
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
           set -e
@@ -558,8 +540,8 @@ jobs:
           SRC_TAURI="./alloomi/apps/web/src-tauri"
           mkdir -p "$DMG_DIR"
 
-          # CRITICAL: this step runs AFTER `Sign app bundle`, so $APP_BUNDLE
-          # already carries the Developer ID signature. beautify-dmg.js only
+          # optimize-tauri-bundle.js has already finalized $APP_BUNDLE using
+          # Alloomi's inside-out signer. beautify-dmg.js only
           # `cp -R`s the .app into the DMG (never modifies its contents), so the
           # signature survives intact → notarization can cover the inner .app →
           # no more "已损坏，无法打开" on install. (Previously we copied the DMG
