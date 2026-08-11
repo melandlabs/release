@@ -87,6 +87,14 @@ jobs:
         working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Copy docxodus WASM runtime
+        working-directory: ./alloomi
+        # --ignore-scripts skips apps/web's postinstall, which is the only
+        # step that copies the docxodus .NET WASM runtime into public/.
+        # Without it the packaged app's contract-review editor/compare
+        # views fail at runtime ("Importing a module script failed").
+        run: node apps/web/scripts/copy-docxodus-wasm.cjs
+
       - name: Install better-sqlite3 prebuilt binary
         working-directory: ./alloomi
         run: |
@@ -431,6 +439,14 @@ jobs:
       - name: Install dependencies
         working-directory: ./alloomi
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Copy docxodus WASM runtime
+        working-directory: ./alloomi
+        # --ignore-scripts skips apps/web's postinstall, which is the only
+        # step that copies the docxodus .NET WASM runtime into public/.
+        # Without it the packaged app's contract-review editor/compare
+        # views fail at runtime ("Importing a module script failed").
+        run: node apps/web/scripts/copy-docxodus-wasm.cjs
 
       - name: Install better-sqlite3 prebuilt binary (x86_64)
         working-directory: ./alloomi
@@ -792,6 +808,14 @@ jobs:
       working-directory: ./alloomi
       run: pnpm install --frozen-lockfile --ignore-scripts
 
+    - name: Copy docxodus WASM runtime
+      working-directory: ./alloomi
+      # --ignore-scripts skips apps/web's postinstall, which is the only
+      # step that copies the docxodus .NET WASM runtime into public/.
+      # Without it the packaged app's contract-review editor/compare
+      # views fail at runtime ("Importing a module script failed").
+      run: node apps/web/scripts/copy-docxodus-wasm.cjs
+
     - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
@@ -922,6 +946,15 @@ jobs:
       working-directory: ./alloomi
       shell: bash
       run: pnpm install --frozen-lockfile --ignore-scripts
+
+    - name: Copy docxodus WASM runtime
+      working-directory: ./alloomi
+      shell: bash
+      # --ignore-scripts skips apps/web's postinstall, which is the only
+      # step that copies the docxodus .NET WASM runtime into public/.
+      # Without it the packaged app's contract-review editor/compare
+      # views fail at runtime ("Importing a module script failed").
+      run: node apps/web/scripts/copy-docxodus-wasm.cjs
 
     - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
@@ -1068,7 +1101,15 @@ jobs:
     - name: Install dependencies
       working-directory: ./alloomi
       run: pnpm install --frozen-lockfile --ignore-scripts
-  
+
+    - name: Copy docxodus WASM runtime
+      working-directory: ./alloomi
+      # --ignore-scripts skips apps/web's postinstall, which is the only
+      # step that copies the docxodus .NET WASM runtime into public/.
+      # Without it the packaged app's contract-review editor/compare
+      # views fail at runtime ("Importing a module script failed").
+      run: node apps/web/scripts/copy-docxodus-wasm.cjs
+
     - name: Install better-sqlite3 prebuilt binary
       working-directory: ./alloomi
       run: |
