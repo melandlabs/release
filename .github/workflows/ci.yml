@@ -12,6 +12,11 @@ on:
         description: 'Specific commit SHA to build (optional)'
         required: false
         type: string
+      enable_outlook_china:
+        description: 'Build the Outlook (21Vianet) customer variant: appends NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1 to the bundled .env and suffixes every artifact name with -outlook-china'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # CI trigger: bump to re-run on main
@@ -150,6 +155,14 @@ jobs:
           IS_TAURI=true
 
           EOF
+
+      - name: Enable Outlook (21Vianet) connector
+        # Manual-dispatch customer variant only. The flag is read from the .env
+        # that ships inside the bundle, so it must live in the file, not just in
+        # the build process environment.
+        if: inputs.enable_outlook_china
+        working-directory: ./alloomi/apps/web
+        run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
       - name: Import Apple Certificate and Intermediate Certificates
         if: env.SKIP_SIGNING != 'true'
@@ -381,7 +394,7 @@ jobs:
       - name: Upload CI DMG
         uses: actions/upload-artifact@v4
         with:
-          name: alloomi-ci-dmg-macos
+          name: alloomi-ci-dmg-macos${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
@@ -509,6 +522,14 @@ jobs:
           IS_TAURI=true
 
           EOF
+
+      - name: Enable Outlook (21Vianet) connector
+        # Manual-dispatch customer variant only. The flag is read from the .env
+        # that ships inside the bundle, so it must live in the file, not just in
+        # the build process environment.
+        if: inputs.enable_outlook_china
+        working-directory: ./alloomi/apps/web
+        run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
       - name: Import Apple Certificate and Intermediate Certificates
         if: env.SKIP_SIGNING != 'true'
@@ -747,7 +768,7 @@ jobs:
       - name: Upload CI Intel DMG
         uses: actions/upload-artifact@v4
         with:
-          name: alloomi-ci-dmg-x64
+          name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
   ci-alloomi-linux-amd64:
     runs-on: ubuntu-22.04
@@ -889,6 +910,14 @@ jobs:
 
         EOF
 
+    - name: Enable Outlook (21Vianet) connector
+      # Manual-dispatch customer variant only. The flag is read from the .env
+      # that ships inside the bundle, so it must live in the file, not just in
+      # the build process environment.
+      if: inputs.enable_outlook_china
+      working-directory: ./alloomi/apps/web
+      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+
     - name: Patch tauri.conf.json to skip AppImage on Linux
       working-directory: ./alloomi/apps/web
       run: |
@@ -907,7 +936,7 @@ jobs:
     - name: Upload CI Linux binary
       uses: actions/upload-artifact@v4
       with:
-        name: alloomi-ci-linux
+        name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
   ci-alloomi-windows:
     runs-on: windows-2022
@@ -1043,6 +1072,15 @@ jobs:
 
         EOF
 
+    - name: Enable Outlook (21Vianet) connector
+      # Manual-dispatch customer variant only. The flag is read from the .env
+      # that ships inside the bundle, so it must live in the file, not just in
+      # the build process environment.
+      if: inputs.enable_outlook_china
+      working-directory: ./alloomi/apps/web
+      shell: bash
+      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+
     - name: Patch tauri.conf.json to skip MSI on Windows
       working-directory: ./alloomi/apps/web
       shell: pwsh
@@ -1066,7 +1104,7 @@ jobs:
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v4
       with:
-        name: alloomi-ci-windows
+        name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
   ci-alloomi-linux-arm64:
     runs-on: ubuntu-22.04-arm
@@ -1201,6 +1239,14 @@ jobs:
   
         EOF
 
+    - name: Enable Outlook (21Vianet) connector
+      # Manual-dispatch customer variant only. The flag is read from the .env
+      # that ships inside the bundle, so it must live in the file, not just in
+      # the build process environment.
+      if: inputs.enable_outlook_china
+      working-directory: ./alloomi/apps/web
+      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+
     - name: Patch tauri.conf.json to skip AppImage on Linux ARM64
       working-directory: ./alloomi/apps/web
       run: |
@@ -1219,5 +1265,5 @@ jobs:
     - name: Upload CI Linux ARM64 binary
       uses: actions/upload-artifact@v4
       with:
-        name: alloomi-ci-linux-arm64
+        name: alloomi-ci-linux-arm64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
