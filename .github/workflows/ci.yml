@@ -70,6 +70,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          components: llvm-tools
+
+      - name: Install macOS audio build dependencies
+        shell: bash
+        run: |
+          # Bundled WebRTC audio processing compiles native code with Meson.
+          brew install meson ninja pkgconf
+          meson --version
+          ninja --version
+          pkg-config --version
 
       - name: Install Rust targets
         run: |
@@ -441,6 +451,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          components: llvm-tools
+
+      - name: Install macOS audio build dependencies
+        shell: bash
+        run: |
+          # Bundled WebRTC audio processing compiles native code with Meson.
+          brew install meson ninja pkgconf
+          meson --version
+          ninja --version
+          pkg-config --version
 
       - name: Install Rust targets
         run: |
