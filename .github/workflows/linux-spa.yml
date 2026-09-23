@@ -1,0 +1,32 @@
+name: Ubuntu 22.04 SPA compatibility
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/linux-spa.yml
+      - scripts/install-spa-headers.sh
+      - tests/linux-spa/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/linux-spa.yml
+      - scripts/install-spa-headers.sh
+      - tests/linux-spa/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run against stock Ubuntu 22.04 runtime
+        run: docker build --progress plain -f tests/linux-spa/Dockerfile .
