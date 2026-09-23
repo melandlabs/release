@@ -853,6 +853,11 @@ jobs:
           libpipewire-0.3-dev \
           libasound2-dev
 
+    - name: Install compatible SPA headers without upgrading Linux runtime
+      run: |
+        bash scripts/install-spa-headers.sh "$RUNNER_TEMP/spa-headers"
+        echo "PKG_CONFIG_PATH=$RUNNER_TEMP/spa-headers/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+
     - name: Get pnpm store directory
       run: |
         echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
@@ -1184,6 +1189,11 @@ jobs:
           xdg-utils \
           libpipewire-0.3-dev \
           libasound2-dev
+
+    - name: Install compatible SPA headers without upgrading Linux runtime
+      run: |
+        bash scripts/install-spa-headers.sh "$RUNNER_TEMP/spa-headers"
+        echo "PKG_CONFIG_PATH=$RUNNER_TEMP/spa-headers/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
 
     - name: Get pnpm store directory
       run: |
