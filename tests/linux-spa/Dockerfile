@@ -10,6 +10,9 @@ COPY --from=rust /usr/local/rustup /usr/local/rustup
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
+# Minimal containers omit the stock client.conf needed for context creation.
+RUN apt-get update && apt-get install -y --no-install-recommends libpipewire-0.3-common \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /check
 COPY scripts/install-spa-headers.sh /check/scripts/install-spa-headers.sh
 RUN bash scripts/install-spa-headers.sh /opt/spa-headers
