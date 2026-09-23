@@ -24,5 +24,7 @@ RUN cargo build && \
     test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35" && \
     ldd target/debug/linux-spa-compatibility
 # The header overlay must not become a runtime dependency.
+# Keep Xvfb alive between xcap's short-lived enumeration/capture connections.
 RUN rm -rf /opt/spa-headers && \
-    LD_BIND_NOW=1 xvfb-run -a target/debug/linux-spa-compatibility
+    LD_BIND_NOW=1 xvfb-run -a -e /dev/stderr \
+      --server-args="-screen 0 1280x720x24 -noreset" target/debug/linux-spa-compatibility
