@@ -11,7 +11,7 @@ COPY --from=rust /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:$PATH
 # Minimal containers omit the stock client.conf needed for context creation.
-RUN apt-get update && apt-get install -y --no-install-recommends libpipewire-0.3-common \
+RUN apt-get update && apt-get install -y --no-install-recommends pipewire \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /check
 COPY scripts/install-spa-headers.sh /check/scripts/install-spa-headers.sh
@@ -21,5 +21,8 @@ COPY tests/linux-spa/Cargo.toml /check/Cargo.toml
 COPY tests/linux-spa/src /check/src
 RUN cargo build && \
     test "$(pkg-config --modversion libpipewire-0.3)" = 0.3.48 && \
-    ldd target/debug/linux-spa-compatibility && \
+    test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35" && \
+    ldd target/debug/linux-spa-compatibility
+# The header overlay must not become a runtime dependency.
+RUN rm -rf /opt/spa-headers && \
     LD_BIND_NOW=1 xvfb-run -a target/debug/linux-spa-compatibility
