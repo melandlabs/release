@@ -124,6 +124,12 @@ jobs:
         working-directory: ./alloomi
         run: |
           pnpm install -w better-sqlite3@12.11.1
+          # The first install ran with --ignore-scripts, so the package's
+          # install hook (`prebuild-install || node-gyp rebuild`) never ran
+          # and the .node binary is missing. Force a rebuild so the hook
+          # actually fires (pnpm otherwise sees the package as "already
+          # installed" and skips it).
+          pnpm rebuild better-sqlite3
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -542,6 +548,12 @@ jobs:
           npm_config_arch: x64
         run: |
           pnpm install -w better-sqlite3@12.11.1
+          # The first install ran with --ignore-scripts, so the package's
+          # install hook (`prebuild-install || node-gyp rebuild`) never ran
+          # and the .node binary is missing. Force a rebuild so the hook
+          # actually fires (pnpm otherwise sees the package as "already
+          # installed" and skips it).
+          pnpm rebuild better-sqlite3
           mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -979,6 +991,12 @@ jobs:
       working-directory: ./alloomi
       run: |
         pnpm install -w better-sqlite3@12.11.1
+        # The first install ran with --ignore-scripts, so the package's
+        # install hook (`prebuild-install || node-gyp rebuild`) never ran
+        # and the .node binary is missing. Force a rebuild so the hook
+        # actually fires (pnpm otherwise sees the package as "already
+        # installed" and skips it).
+        pnpm rebuild better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -1188,6 +1206,12 @@ jobs:
       shell: bash
       run: |
         pnpm install -w better-sqlite3@12.11.1
+        # The first install ran with --ignore-scripts, so the package's
+        # install hook (`prebuild-install || node-gyp rebuild`) never ran
+        # and the .node binary is missing. Force a rebuild so the hook
+        # actually fires (pnpm otherwise sees the package as "already
+        # installed" and skips it).
+        pnpm rebuild better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
@@ -1413,6 +1437,12 @@ jobs:
       working-directory: ./alloomi
       run: |
         pnpm install -w better-sqlite3@12.11.1
+        # The first install ran with --ignore-scripts, so the package's
+        # install hook (`prebuild-install || node-gyp rebuild`) never ran
+        # and the .node binary is missing. Force a rebuild so the hook
+        # actually fires (pnpm otherwise sees the package as "already
+        # installed" and skips it).
+        pnpm rebuild better-sqlite3
         mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
