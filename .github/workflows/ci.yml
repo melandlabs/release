@@ -242,6 +242,18 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Cache Rust build (cargo registry + target)
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Cargo workspace root is at apps/web/src/app/ (single crate).
+          # target/ lives next to Cargo.toml. `prefix-key` adds
+          # OS+arch so macos-arm64 and macos-amd64 (both runner.os=macos)
+          # get separate caches, and the same-arch cache is shared across
+          # branches/runs.
+          workspaces: ./alloomi/apps/web/src-tauri -> target
+          prefix-key: ${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: warn
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -680,6 +692,13 @@ jobs:
             }
           "
 
+      - name: Cache Rust build (cargo registry + target)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./alloomi/apps/web/src-tauri -> target
+          prefix-key: ${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: warn
+
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -1104,6 +1123,13 @@ jobs:
           }
         "
 
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
+
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
@@ -1321,6 +1347,13 @@ jobs:
           Get-Content $path | Select-String 'targets'
           Get-Content $path | Select-String 'wix'
         }
+
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
 
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
@@ -1546,6 +1579,13 @@ jobs:
             console.log('Patched ' + path + ' targets to deb');
           }
         "
+
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
 
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
