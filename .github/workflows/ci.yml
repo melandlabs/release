@@ -128,14 +128,49 @@ jobs:
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
-      - name: Verify native modules are built
+      - name: Verify native modules are Node v22 compatible
         working-directory: ./alloomi
         run: |
-          echo "=== Checking top-level better-sqlite3 ==="
-          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
-          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
-          echo "✅ All native modules built successfully"
+          set -e
+          # Load both better-sqlite3 copies via direct file paths. The
+          # nested @photon-ai/imessage-kit/node_modules/better-sqlite3 cannot
+          # be required by its subpath because imessage-kit's `exports`
+          # field does not expose it; we go around the resolver.
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const v = process.versions;
+            console.log("node:", v.node, "abi:", v.modules);
+            if (Number(v.modules) !== 127) {
+              console.error("❌ unexpected NODE_MODULE_VERSION (expected 127 for Node 22)");
+              process.exit(1);
+            }
+            // Top-level: what apps/web init-db.cjs requires
+            const top = require("better-sqlite3");
+            const topDb = new top(":memory:");
+            topDb.pragma("user_version = 42");
+            if (topDb.pragma("user_version", { simple: true }) !== 42) {
+              throw new Error("top-level better-sqlite3 read-back failed");
+            }
+            topDb.close();
+            console.log("✅ top-level better-sqlite3@" + require("better-sqlite3/package.json").version + " loadable on Node", v.node);
+            // Nested: only present if pnpm resolved a different version for
+            // @photon-ai/imessage-kit. With the root pinned to 12.11.1, the
+            // shared version is hoisted and the nested copy disappears.
+            const nestedPkgPath = path.join(process.cwd(), "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3");
+            if (fs.existsSync(path.join(nestedPkgPath, "package.json"))) {
+              const nested = require(nestedPkgPath);
+              const nestedDb = new nested(":memory:");
+              nestedDb.pragma("user_version = 7");
+              if (nestedDb.pragma("user_version", { simple: true }) !== 7) {
+                throw new Error("nested better-sqlite3 read-back failed");
+              }
+              nestedDb.close();
+              console.log("✅ imessage-kit better-sqlite3@" + require(path.join(nestedPkgPath, "package.json")).version + " loadable on Node", v.node);
+            } else {
+              console.log("ℹ️ imessage-kit nested better-sqlite3 not present (sharing root copy at v" + require("better-sqlite3/package.json").version + ")");
+            }
+          '
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
@@ -511,14 +546,49 @@ jobs:
           cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
              node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
-      - name: Verify native modules are built
+      - name: Verify native modules are Node v22 compatible
         working-directory: ./alloomi
         run: |
-          echo "=== Checking top-level better-sqlite3 ==="
-          ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
-          echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-          ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
-          echo "✅ All native modules built successfully"
+          set -e
+          # Load both better-sqlite3 copies via direct file paths. The
+          # nested @photon-ai/imessage-kit/node_modules/better-sqlite3 cannot
+          # be required by its subpath because imessage-kit's `exports`
+          # field does not expose it; we go around the resolver.
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const v = process.versions;
+            console.log("node:", v.node, "abi:", v.modules);
+            if (Number(v.modules) !== 127) {
+              console.error("❌ unexpected NODE_MODULE_VERSION (expected 127 for Node 22)");
+              process.exit(1);
+            }
+            // Top-level: what apps/web init-db.cjs requires
+            const top = require("better-sqlite3");
+            const topDb = new top(":memory:");
+            topDb.pragma("user_version = 42");
+            if (topDb.pragma("user_version", { simple: true }) !== 42) {
+              throw new Error("top-level better-sqlite3 read-back failed");
+            }
+            topDb.close();
+            console.log("✅ top-level better-sqlite3@" + require("better-sqlite3/package.json").version + " loadable on Node", v.node);
+            // Nested: only present if pnpm resolved a different version for
+            // @photon-ai/imessage-kit. With the root pinned to 12.11.1, the
+            // shared version is hoisted and the nested copy disappears.
+            const nestedPkgPath = path.join(process.cwd(), "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3");
+            if (fs.existsSync(path.join(nestedPkgPath, "package.json"))) {
+              const nested = require(nestedPkgPath);
+              const nestedDb = new nested(":memory:");
+              nestedDb.pragma("user_version = 7");
+              if (nestedDb.pragma("user_version", { simple: true }) !== 7) {
+                throw new Error("nested better-sqlite3 read-back failed");
+              }
+              nestedDb.close();
+              console.log("✅ imessage-kit better-sqlite3@" + require(path.join(nestedPkgPath, "package.json")).version + " loadable on Node", v.node);
+            } else {
+              console.log("ℹ️ imessage-kit nested better-sqlite3 not present (sharing root copy at v" + require("better-sqlite3/package.json").version + ")");
+            }
+          '
 
       - name: Create .env file
         working-directory: ./alloomi/apps/web
@@ -913,14 +983,49 @@ jobs:
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
-    - name: Verify native modules are built
+    - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
       run: |
-        echo "=== Checking top-level better-sqlite3 ==="
-        ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
-        echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-        ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
-        echo "All native modules built successfully"
+        set -e
+        # Load both better-sqlite3 copies via direct file paths. The
+        # nested @photon-ai/imessage-kit/node_modules/better-sqlite3 cannot
+        # be required by its subpath because imessage-kit's `exports`
+        # field does not expose it; we go around the resolver.
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const v = process.versions;
+          console.log("node:", v.node, "abi:", v.modules);
+          if (Number(v.modules) !== 127) {
+            console.error("❌ unexpected NODE_MODULE_VERSION (expected 127 for Node 22)");
+            process.exit(1);
+          }
+          // Top-level: what apps/web init-db.cjs requires
+          const top = require("better-sqlite3");
+          const topDb = new top(":memory:");
+          topDb.pragma("user_version = 42");
+          if (topDb.pragma("user_version", { simple: true }) !== 42) {
+            throw new Error("top-level better-sqlite3 read-back failed");
+          }
+          topDb.close();
+          console.log("✅ top-level better-sqlite3@" + require("better-sqlite3/package.json").version + " loadable on Node", v.node);
+          // Nested: only present if pnpm resolved a different version for
+          // @photon-ai/imessage-kit. With the root pinned to 12.11.1, the
+          // shared version is hoisted and the nested copy disappears.
+          const nestedPkgPath = path.join(process.cwd(), "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3");
+          if (fs.existsSync(path.join(nestedPkgPath, "package.json"))) {
+            const nested = require(nestedPkgPath);
+            const nestedDb = new nested(":memory:");
+            nestedDb.pragma("user_version = 7");
+            if (nestedDb.pragma("user_version", { simple: true }) !== 7) {
+              throw new Error("nested better-sqlite3 read-back failed");
+            }
+            nestedDb.close();
+            console.log("✅ imessage-kit better-sqlite3@" + require(path.join(nestedPkgPath, "package.json")).version + " loadable on Node", v.node);
+          } else {
+            console.log("ℹ️ imessage-kit nested better-sqlite3 not present (sharing root copy at v" + require("better-sqlite3/package.json").version + ")");
+          }
+        '
 
     - name: Create .env file
       working-directory: ./alloomi/apps/web
@@ -1087,15 +1192,50 @@ jobs:
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
-    - name: Verify native modules are built
+    - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
       shell: bash
       run: |
-        echo "=== Checking top-level better-sqlite3 ==="
-        ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
-        echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-        ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
-        echo "All native modules built successfully"
+        set -e
+        # Load both better-sqlite3 copies via direct file paths. The
+        # nested @photon-ai/imessage-kit/node_modules/better-sqlite3 cannot
+        # be required by its subpath because imessage-kit's `exports`
+        # field does not expose it; we go around the resolver.
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const v = process.versions;
+          console.log("node:", v.node, "abi:", v.modules);
+          if (Number(v.modules) !== 127) {
+            console.error("❌ unexpected NODE_MODULE_VERSION (expected 127 for Node 22)");
+            process.exit(1);
+          }
+          // Top-level: what apps/web init-db.cjs requires
+          const top = require("better-sqlite3");
+          const topDb = new top(":memory:");
+          topDb.pragma("user_version = 42");
+          if (topDb.pragma("user_version", { simple: true }) !== 42) {
+            throw new Error("top-level better-sqlite3 read-back failed");
+          }
+          topDb.close();
+          console.log("✅ top-level better-sqlite3@" + require("better-sqlite3/package.json").version + " loadable on Node", v.node);
+          // Nested: only present if pnpm resolved a different version for
+          // @photon-ai/imessage-kit. With the root pinned to 12.11.1, the
+          // shared version is hoisted and the nested copy disappears.
+          const nestedPkgPath = path.join(process.cwd(), "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3");
+          if (fs.existsSync(path.join(nestedPkgPath, "package.json"))) {
+            const nested = require(nestedPkgPath);
+            const nestedDb = new nested(":memory:");
+            nestedDb.pragma("user_version = 7");
+            if (nestedDb.pragma("user_version", { simple: true }) !== 7) {
+              throw new Error("nested better-sqlite3 read-back failed");
+            }
+            nestedDb.close();
+            console.log("✅ imessage-kit better-sqlite3@" + require(path.join(nestedPkgPath, "package.json")).version + " loadable on Node", v.node);
+          } else {
+            console.log("ℹ️ imessage-kit nested better-sqlite3 not present (sharing root copy at v" + require("better-sqlite3/package.json").version + ")");
+          }
+        '
 
     - name: Create .env file
       working-directory: ./alloomi/apps/web
@@ -1277,14 +1417,49 @@ jobs:
         cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
            node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
 
-    - name: Verify native modules are built
+    - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
       run: |
-        echo "=== Checking top-level better-sqlite3 ==="
-        ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node || exit 1
-        echo "=== Checking nested better-sqlite3 in imessage-kit ==="
-        ls -la node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node || exit 1
-        echo "All native modules built successfully"
+        set -e
+        # Load both better-sqlite3 copies via direct file paths. The
+        # nested @photon-ai/imessage-kit/node_modules/better-sqlite3 cannot
+        # be required by its subpath because imessage-kit's `exports`
+        # field does not expose it; we go around the resolver.
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const v = process.versions;
+          console.log("node:", v.node, "abi:", v.modules);
+          if (Number(v.modules) !== 127) {
+            console.error("❌ unexpected NODE_MODULE_VERSION (expected 127 for Node 22)");
+            process.exit(1);
+          }
+          // Top-level: what apps/web init-db.cjs requires
+          const top = require("better-sqlite3");
+          const topDb = new top(":memory:");
+          topDb.pragma("user_version = 42");
+          if (topDb.pragma("user_version", { simple: true }) !== 42) {
+            throw new Error("top-level better-sqlite3 read-back failed");
+          }
+          topDb.close();
+          console.log("✅ top-level better-sqlite3@" + require("better-sqlite3/package.json").version + " loadable on Node", v.node);
+          // Nested: only present if pnpm resolved a different version for
+          // @photon-ai/imessage-kit. With the root pinned to 12.11.1, the
+          // shared version is hoisted and the nested copy disappears.
+          const nestedPkgPath = path.join(process.cwd(), "node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3");
+          if (fs.existsSync(path.join(nestedPkgPath, "package.json"))) {
+            const nested = require(nestedPkgPath);
+            const nestedDb = new nested(":memory:");
+            nestedDb.pragma("user_version = 7");
+            if (nestedDb.pragma("user_version", { simple: true }) !== 7) {
+              throw new Error("nested better-sqlite3 read-back failed");
+            }
+            nestedDb.close();
+            console.log("✅ imessage-kit better-sqlite3@" + require(path.join(nestedPkgPath, "package.json")).version + " loadable on Node", v.node);
+          } else {
+            console.log("ℹ️ imessage-kit nested better-sqlite3 not present (sharing root copy at v" + require("better-sqlite3/package.json").version + ")");
+          }
+        '
   
     - name: Create .env file
       working-directory: ./alloomi/apps/web
