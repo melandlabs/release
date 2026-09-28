@@ -574,15 +574,28 @@ jobs:
 
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Patch tauri.conf.json to skip bundler on macOS (Intel)
+      - name: Patch tauri.conf.* to skip bundler on macOS (Intel)
         working-directory: ./alloomi/apps/web
         run: |
           node -e "
             const fs = require('fs');
-            const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            c.bundle.targets = ['app'];
-            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
-            console.log('Patched targets to app');
+            // `pnpm tauri:build` reads whichever regional config ALLOOMI_REGION
+            // picks (default: intl → tauri.conf.intl.json); the .json files for
+            // intl/cn/dev shadow the base, so patching only tauri.conf.json was
+            // a no-op. Loop over every regional config to cover ALLOOMI_REGION
+            // = intl|cn|dev and the base for non-CI builds.
+            const paths = [
+              'src-tauri/tauri.conf.json',
+              'src-tauri/tauri.conf.intl.json',
+              'src-tauri/tauri.conf.cn.json',
+              'src-tauri/tauri.conf.dev.json',
+            ];
+            for (const path of paths) {
+              const c = JSON.parse(fs.readFileSync(path, 'utf8'));
+              c.bundle.targets = ['app'];
+              fs.writeFileSync(path, JSON.stringify(c, null, 2));
+              console.log('Patched ' + path + ' targets to app');
+            }
           "
 
       - name: Build Tauri app (Intel)
@@ -935,7 +948,7 @@ jobs:
 
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
+- name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
@@ -943,15 +956,29 @@ jobs:
       working-directory: ./alloomi/apps/web
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
-    - name: Patch tauri.conf.json to skip AppImage on Linux
+    - name: Patch tauri.conf.* to skip AppImage on Linux
       working-directory: ./alloomi/apps/web
       run: |
         node -e "
           const fs = require('fs');
-          const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-          c.bundle.targets = ['deb'];
-          fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
-          console.log('Patched targets to deb');
+          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
+          // never reached the active config, so AppImage bundling kept running and
+          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // over every regional config so the patch covers whichever one the
+          // build actually loads.
+          const paths = [
+            'src-tauri/tauri.conf.json',
+            'src-tauri/tauri.conf.intl.json',
+            'src-tauri/tauri.conf.cn.json',
+            'src-tauri/tauri.conf.dev.json',
+          ];
+          for (const path of paths) {
+            const c = JSON.parse(fs.readFileSync(path, 'utf8'));
+            c.bundle.targets = ['deb'];
+            fs.writeFileSync(path, JSON.stringify(c, null, 2));
+            console.log('Patched ' + path + ' targets to deb');
+          }
         "
 
     - name: Build Tauri app (Linux)
@@ -1097,7 +1124,7 @@ jobs:
 
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
+- name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
@@ -1106,17 +1133,30 @@ jobs:
       shell: bash
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
-    - name: Patch tauri.conf.json to skip MSI on Windows
+    - name: Patch tauri.conf.* to skip MSI on Windows
       working-directory: ./alloomi/apps/web
       shell: pwsh
       run: |
-        $content = Get-Content src-tauri\tauri.conf.json -Raw
-        $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
-        $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
-        $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
-        Set-Content -Path src-tauri\tauri.conf.json -Value $content -NoNewline
-        Get-Content src-tauri\tauri.conf.json | Select-String 'targets'
-        Get-Content src-tauri\tauri.conf.json | Select-String 'wix'
+        # `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+        # (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
+        # never reached the active config, so MSI bundling kept running. Loop
+        # over every regional config so the patch covers whichever one the
+        # build actually loads.
+        $paths = @(
+          'src-tauri\tauri.conf.json',
+          'src-tauri\tauri.conf.intl.json',
+          'src-tauri\tauri.conf.cn.json',
+          'src-tauri\tauri.conf.dev.json'
+        )
+        foreach ($path in $paths) {
+          $content = Get-Content $path -Raw
+          $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
+          $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
+          $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
+          Set-Content -Path $path -Value $content -NoNewline
+          Get-Content $path | Select-String 'targets'
+          Get-Content $path | Select-String 'wix'
+        }
 
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
@@ -1269,7 +1309,7 @@ jobs:
   
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
+- name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
@@ -1277,15 +1317,29 @@ jobs:
       working-directory: ./alloomi/apps/web
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
-    - name: Patch tauri.conf.json to skip AppImage on Linux ARM64
+    - name: Patch tauri.conf.* to skip AppImage on Linux ARM64
       working-directory: ./alloomi/apps/web
       run: |
         node -e "
           const fs = require('fs');
-          const c = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-          c.bundle.targets = ['deb'];
-          fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(c, null, 2));
-          console.log('Patched targets to deb');
+          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
+          // never reached the active config, so AppImage bundling kept running and
+          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // over every regional config so the patch covers whichever one the
+          // build actually loads.
+          const paths = [
+            'src-tauri/tauri.conf.json',
+            'src-tauri/tauri.conf.intl.json',
+            'src-tauri/tauri.conf.cn.json',
+            'src-tauri/tauri.conf.dev.json',
+          ];
+          for (const path of paths) {
+            const c = JSON.parse(fs.readFileSync(path, 'utf8'));
+            c.bundle.targets = ['deb'];
+            fs.writeFileSync(path, JSON.stringify(c, null, 2));
+            console.log('Patched ' + path + ' targets to deb');
+          }
         "
 
     - name: Build Tauri app (Linux ARM64)
