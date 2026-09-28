@@ -242,6 +242,18 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Cache Rust build (cargo registry + target)
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Cargo workspace root is at apps/web/src/app/ (single crate).
+          # target/ lives next to Cargo.toml. `prefix-key` adds
+          # OS+arch so macos-arm64 and macos-amd64 (both runner.os=macos)
+          # get separate caches, and the same-arch cache is shared across
+          # branches/runs.
+          workspaces: ./alloomi/apps/web/src-tauri -> target
+          prefix-key: ${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: warn
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -661,7 +673,7 @@ jobs:
         run: |
           node -e "
             const fs = require('fs');
-            // `pnpm tauri:build` reads whichever regional config ALLOOMI_REGION
+            // 'pnpm tauri:build' reads whichever regional config ALLOOMI_REGION
             // picks (default: intl → tauri.conf.intl.json); the .json files for
             // intl/cn/dev shadow the base, so patching only tauri.conf.json was
             // a no-op. Loop over every regional config to cover ALLOOMI_REGION
@@ -679,6 +691,13 @@ jobs:
               console.log('Patched ' + path + ' targets to app');
             }
           "
+
+      - name: Cache Rust build (cargo registry + target)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./alloomi/apps/web/src-tauri -> target
+          prefix-key: ${{ runner.os }}-${{ runner.arch }}
+          if-no-files-found: warn
 
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
@@ -1084,10 +1103,10 @@ jobs:
       run: |
         node -e "
           const fs = require('fs');
-          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // 'pnpm tauri:build' reads the regional config picked by ALLOOMI_REGION
           // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
           // never reached the active config, so AppImage bundling kept running and
-          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // 'linuxdeploy' failed silently on both amd64 and arm64 runners. Loop
           // over every regional config so the patch covers whichever one the
           // build actually loads.
           const paths = [
@@ -1103,6 +1122,13 @@ jobs:
             console.log('Patched ' + path + ' targets to deb');
           }
         "
+
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
 
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
@@ -1322,6 +1348,13 @@ jobs:
           Get-Content $path | Select-String 'wix'
         }
 
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
+
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
       shell: bash
@@ -1527,10 +1560,10 @@ jobs:
       run: |
         node -e "
           const fs = require('fs');
-          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // 'pnpm tauri:build' reads the regional config picked by ALLOOMI_REGION
           // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
           // never reached the active config, so AppImage bundling kept running and
-          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // 'linuxdeploy' failed silently on both amd64 and arm64 runners. Loop
           // over every regional config so the patch covers whichever one the
           // build actually loads.
           const paths = [
@@ -1546,6 +1579,13 @@ jobs:
             console.log('Patched ' + path + ' targets to deb');
           }
         "
+
+    - name: Cache Rust build (cargo registry + target)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ./alloomi/apps/web/src-tauri -> target
+        prefix-key: ${{ runner.os }}-${{ runner.arch }}
+        if-no-files-found: warn
 
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
