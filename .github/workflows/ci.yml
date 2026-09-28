@@ -1053,7 +1053,7 @@ jobs:
 
         EOF
 
-- name: Enable Outlook (21Vianet) connector
+    - name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
@@ -1264,7 +1264,7 @@ jobs:
 
         EOF
 
-- name: Enable Outlook (21Vianet) connector
+    - name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
@@ -1484,7 +1484,7 @@ jobs:
   
         EOF
 
-- name: Enable Outlook (21Vianet) connector
+    - name: Enable Outlook (21Vianet) connector
       # Manual-dispatch customer variant only. The flag is read from the .env
       # that ships inside the bundle, so it must live in the file, not just in
       # the build process environment.
