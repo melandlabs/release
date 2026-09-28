@@ -673,7 +673,7 @@ jobs:
         run: |
           node -e "
             const fs = require('fs');
-            // `pnpm tauri:build` reads whichever regional config ALLOOMI_REGION
+            // 'pnpm tauri:build' reads whichever regional config ALLOOMI_REGION
             // picks (default: intl → tauri.conf.intl.json); the .json files for
             // intl/cn/dev shadow the base, so patching only tauri.conf.json was
             // a no-op. Loop over every regional config to cover ALLOOMI_REGION
@@ -1103,10 +1103,10 @@ jobs:
       run: |
         node -e "
           const fs = require('fs');
-          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // 'pnpm tauri:build' reads the regional config picked by ALLOOMI_REGION
           // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
           // never reached the active config, so AppImage bundling kept running and
-          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // 'linuxdeploy' failed silently on both amd64 and arm64 runners. Loop
           // over every regional config so the patch covers whichever one the
           // build actually loads.
           const paths = [
@@ -1560,10 +1560,10 @@ jobs:
       run: |
         node -e "
           const fs = require('fs');
-          // `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
+          // 'pnpm tauri:build' reads the regional config picked by ALLOOMI_REGION
           // (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
           // never reached the active config, so AppImage bundling kept running and
-          // `linuxdeploy` failed silently on both amd64 and arm64 runners. Loop
+          // 'linuxdeploy' failed silently on both amd64 and arm64 runners. Loop
           // over every regional config so the patch covers whichever one the
           // build actually loads.
           const paths = [
