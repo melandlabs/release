@@ -265,6 +265,34 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
+      - name: Verify imessage-kit package files are in the standalone bundle
+        # Regression guard for the v0.6.6 crash:
+        # "Cannot find package '@photon-ai/imessage-kit/index.js'". The script
+        # apps/web/scripts/fix-standalone-pnpm.js must land the package's
+        # own files (package.json, dist/index.js, dist/index.cjs) into the
+        # standalone tree -- otherwise Node falls back to index.js at the
+        # package root and throws at runtime.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const root = ".next/standalone/apps/web/node_modules/@photon-ai/imessage-kit";
+            const missing = ["package.json", "dist/index.js", "dist/index.cjs"]
+              .filter(rel => !fs.existsSync(path.join(root, rel)));
+            if (missing.length) {
+              console.error("ERROR: standalone is missing @photon-ai/imessage-kit files: " + missing.join(", "));
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyIMessageKitPackage step");
+              process.exit(1);
+            }
+            const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+            if (!pkg.exports || !pkg.exports["."] || !pkg.exports["."].require) {
+              console.error("ERROR: imessage-kit/package.json missing exports map; Node will fall back to index.js at root");
+              process.exit(1);
+            }
+            console.log("OK: imessage-kit package files present in standalone bundle");
+          '
+
       - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
         run: |
@@ -710,6 +738,34 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
+      - name: Verify imessage-kit package files are in the standalone bundle
+        # Regression guard for the v0.6.6 crash:
+        # "Cannot find package '@photon-ai/imessage-kit/index.js'". The script
+        # apps/web/scripts/fix-standalone-pnpm.js must land the package's
+        # own files (package.json, dist/index.js, dist/index.cjs) into the
+        # standalone tree -- otherwise Node falls back to index.js at the
+        # package root and throws at runtime.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const root = ".next/standalone/apps/web/node_modules/@photon-ai/imessage-kit";
+            const missing = ["package.json", "dist/index.js", "dist/index.cjs"]
+              .filter(rel => !fs.existsSync(path.join(root, rel)));
+            if (missing.length) {
+              console.error("ERROR: standalone is missing @photon-ai/imessage-kit files: " + missing.join(", "));
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyIMessageKitPackage step");
+              process.exit(1);
+            }
+            const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+            if (!pkg.exports || !pkg.exports["."] || !pkg.exports["."].require) {
+              console.error("ERROR: imessage-kit/package.json missing exports map; Node will fall back to index.js at root");
+              process.exit(1);
+            }
+            console.log("OK: imessage-kit package files present in standalone bundle");
+          '
+
       - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
         run: |
@@ -1134,6 +1190,34 @@ jobs:
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
 
+    - name: Verify imessage-kit package files are in the standalone bundle
+      # Regression guard for the v0.6.6 crash:
+      # "Cannot find package '@photon-ai/imessage-kit/index.js'". The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land the package's
+      # own files (package.json, dist/index.js, dist/index.cjs) into the
+      # standalone tree -- otherwise Node falls back to index.js at the
+      # package root and throws at runtime.
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const root = ".next/standalone/apps/web/node_modules/@photon-ai/imessage-kit";
+          const missing = ["package.json", "dist/index.js", "dist/index.cjs"]
+            .filter(rel => !fs.existsSync(path.join(root, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing @photon-ai/imessage-kit files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyIMessageKitPackage step");
+            process.exit(1);
+          }
+          const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+          if (!pkg.exports || !pkg.exports["."] || !pkg.exports["."].require) {
+            console.error("ERROR: imessage-kit/package.json missing exports map; Node will fall back to index.js at root");
+            process.exit(1);
+          }
+          console.log("OK: imessage-kit package files present in standalone bundle");
+        '
+
     - name: Upload CI Linux binary
       uses: actions/upload-artifact@v4
       with:
@@ -1363,6 +1447,35 @@ jobs:
         RUSTUP_WINDOWS_PATH: 1
         TAURI_BUNDLE_TARGET: nsis
 
+    - name: Verify imessage-kit package files are in the standalone bundle
+      # Regression guard for the v0.6.6 crash:
+      # "Cannot find package '@photon-ai/imessage-kit/index.js'". The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land the package's
+      # own files (package.json, dist/index.js, dist/index.cjs) into the
+      # standalone tree -- otherwise Node falls back to index.js at the
+      # package root and throws at runtime.
+      working-directory: ./alloomi/apps/web
+      shell: bash
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const root = ".next/standalone/apps/web/node_modules/@photon-ai/imessage-kit";
+          const missing = ["package.json", "dist/index.js", "dist/index.cjs"]
+            .filter(rel => !fs.existsSync(path.join(root, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing @photon-ai/imessage-kit files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyIMessageKitPackage step");
+            process.exit(1);
+          }
+          const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+          if (!pkg.exports || !pkg.exports["."] || !pkg.exports["."].require) {
+            console.error("ERROR: imessage-kit/package.json missing exports map; Node will fall back to index.js at root");
+            process.exit(1);
+          }
+          console.log("OK: imessage-kit package files present in standalone bundle");
+        '
+
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v4
       with:
@@ -1590,7 +1703,35 @@ jobs:
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
-  
+
+    - name: Verify imessage-kit package files are in the standalone bundle
+      # Regression guard for the v0.6.6 crash:
+      # "Cannot find package '@photon-ai/imessage-kit/index.js'". The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land the package's
+      # own files (package.json, dist/index.js, dist/index.cjs) into the
+      # standalone tree -- otherwise Node falls back to index.js at the
+      # package root and throws at runtime.
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const root = ".next/standalone/apps/web/node_modules/@photon-ai/imessage-kit";
+          const missing = ["package.json", "dist/index.js", "dist/index.cjs"]
+            .filter(rel => !fs.existsSync(path.join(root, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing @photon-ai/imessage-kit files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyIMessageKitPackage step");
+            process.exit(1);
+          }
+          const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+          if (!pkg.exports || !pkg.exports["."] || !pkg.exports["."].require) {
+            console.error("ERROR: imessage-kit/package.json missing exports map; Node will fall back to index.js at root");
+            process.exit(1);
+          }
+          console.log("OK: imessage-kit package files present in standalone bundle");
+        '
+
     - name: Upload CI Linux ARM64 binary
       uses: actions/upload-artifact@v4
       with:
