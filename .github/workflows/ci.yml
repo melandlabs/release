@@ -1186,6 +1186,24 @@ jobs:
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
 
+    # GitHub-hosted ubuntu-22.04 runners ship with 16 GB RAM and no swap. The
+    # web/tauri build concurrently runs `next build --webpack` (V8 heap),
+    # `cargo` (Rust), and native deps (better-sqlite3, sqlite-vec). On a busy
+    # pool the OS reclaims memory before V8 can finish TypeScript checking,
+    # and the runner receives SIGTERM mid-build. Adding 8 GB of swap gives V8
+    # enough headroom for the 8 GB old-space ceiling without OOM-killing the
+    # cargo process.
+    - name: Configure swap (Linux only)
+      if: runner.os == 'Linux'
+      run: |
+        if [ ! -f /swapfile ]; then
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+        fi
+        free -h
+
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
@@ -1699,6 +1717,20 @@ jobs:
         workspaces: ./alloomi/apps/web/src-tauri -> target
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
+
+    # See ci-alloomi-linux-amd64 for the rationale; GitHub-hosted
+    # ubuntu-22.04-arm runners also ship 16 GB / no swap and need the same
+    # headroom for the concurrent `next build` + `cargo` workload.
+    - name: Configure swap (Linux only)
+      if: runner.os == 'Linux'
+      run: |
+        if [ ! -f /swapfile ]; then
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+        fi
+        free -h
 
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
