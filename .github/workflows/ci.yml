@@ -254,6 +254,20 @@ jobs:
           prefix-key: ${{ runner.os }}-${{ runner.arch }}
           if-no-files-found: warn
 
+      - name: Cache meeting media SDK downloads
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        uses: actions/cache@v4
+        with:
+          path: alloomi/.local-dev/gstreamer/downloads
+          key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-macos-sdk.mjs') }}
+
+      - name: Prepare meeting media GStreamer SDK
+        # tauri:build packages the private meeting media runtime first
+        # (apps/web/scripts/build-meeting-media.mjs) and fails without this SDK.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        working-directory: ./alloomi
+        run: node scripts/meeting-media-probe/prepare-macos-sdk.mjs
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -264,6 +278,15 @@ jobs:
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
+
+      - name: Verify meeting media runtime is in the app bundle
+        # Meeting recording runs through this helper; an app without it builds
+        # fine but cannot record.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        run: |
+          RUNTIME="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app/Contents/Resources/resources/meeting-media"
+          test -x "$RUNTIME/bin/alloomi-meeting-media" && test -f "$RUNTIME/manifest.json"
+          codesign --verify --strict --verbose=2 "$RUNTIME/bin/alloomi-meeting-media"
 
       - name: Verify imessage-kit package files are in the standalone bundle
         # Regression guard for the v0.6.6 crash:
@@ -727,6 +750,20 @@ jobs:
           prefix-key: ${{ runner.os }}-${{ runner.arch }}
           if-no-files-found: warn
 
+      - name: Cache meeting media SDK downloads
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        uses: actions/cache@v4
+        with:
+          path: alloomi/.local-dev/gstreamer/downloads
+          key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-macos-sdk.mjs') }}
+
+      - name: Prepare meeting media GStreamer SDK
+        # tauri:build packages the private meeting media runtime first
+        # (apps/web/scripts/build-meeting-media.mjs) and fails without this SDK.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        working-directory: ./alloomi
+        run: node scripts/meeting-media-probe/prepare-macos-sdk.mjs
+
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -737,6 +774,15 @@ jobs:
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
+
+      - name: Verify meeting media runtime is in the app bundle
+        # Meeting recording runs through this helper; an app without it builds
+        # fine but cannot record.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+        run: |
+          RUNTIME="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app/Contents/Resources/resources/meeting-media"
+          test -x "$RUNTIME/bin/alloomi-meeting-media" && test -f "$RUNTIME/manifest.json"
+          codesign --verify --strict --verbose=2 "$RUNTIME/bin/alloomi-meeting-media"
 
       - name: Verify imessage-kit package files are in the standalone bundle
         # Regression guard for the v0.6.6 crash:
@@ -1204,9 +1250,39 @@ jobs:
         fi
         free -h
 
+    - name: Install meeting media SDK build dependencies
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      run: sudo apt-get install -y flex bison libglib2.0-dev libpulse-dev python3-venv
+
+    - name: Cache meeting media GStreamer SDK
+      # Ubuntu 22.04 ships GStreamer 1.20; the media runtime needs >= 1.22, so
+      # the SDK is compiled from pinned sources. The script only reuses a cached
+      # SDK whose stamp matches the script that built it.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      uses: actions/cache@v4
+      with:
+        path: |
+          alloomi/.local-dev/gstreamer/downloads
+          alloomi/.local-dev/gstreamer/sdk
+        key: gstreamer-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-linux-sdk.sh') }}
+
+    - name: Prepare meeting media GStreamer SDK
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      working-directory: ./alloomi
+      run: bash scripts/meeting-media-probe/prepare-linux-sdk.sh
+
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
+
+    - name: Verify meeting media runtime is in the deb
+      # Meeting recording runs through this helper; a package without it
+      # installs fine but cannot record.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      run: |
+        DEB=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb)
+        dpkg -c "$DEB" | grep -q 'meeting-media/bin/alloomi-meeting-media$'
+        dpkg -c "$DEB" | grep -q 'meeting-media/manifest.json$'
 
     - name: Verify imessage-kit package files are in the standalone bundle
       # Regression guard for the v0.6.6 crash:
@@ -1456,6 +1532,25 @@ jobs:
         workspaces: ./alloomi/apps/web/src-tauri -> target
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
+
+    - name: Cache meeting media SDK installer
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      uses: actions/cache@v4
+      with:
+        path: alloomi/.local-dev/gstreamer/*.exe
+        key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-windows-sdk.ps1') }}
+
+    - name: Prepare meeting media GStreamer SDK
+      # tauri:build packages the private meeting media runtime first
+      # (apps/web/scripts/build-meeting-media.mjs) and fails without this SDK.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      working-directory: ./alloomi
+      shell: pwsh
+      run: |
+        ./scripts/meeting-media-probe/prepare-windows-sdk.ps1
+        if (-not (Get-Command pkg-config -ErrorAction SilentlyContinue)) {
+          choco install -y --no-progress pkgconfiglite
+        }
 
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
@@ -1732,9 +1827,39 @@ jobs:
         fi
         free -h
 
+    - name: Install meeting media SDK build dependencies
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      run: sudo apt-get install -y flex bison libglib2.0-dev libpulse-dev python3-venv
+
+    - name: Cache meeting media GStreamer SDK
+      # Ubuntu 22.04 ships GStreamer 1.20; the media runtime needs >= 1.22, so
+      # the SDK is compiled from pinned sources. The script only reuses a cached
+      # SDK whose stamp matches the script that built it.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      uses: actions/cache@v4
+      with:
+        path: |
+          alloomi/.local-dev/gstreamer/downloads
+          alloomi/.local-dev/gstreamer/sdk
+        key: gstreamer-sdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-linux-sdk.sh') }}
+
+    - name: Prepare meeting media GStreamer SDK
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      working-directory: ./alloomi
+      run: bash scripts/meeting-media-probe/prepare-linux-sdk.sh
+
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
+
+    - name: Verify meeting media runtime is in the deb
+      # Meeting recording runs through this helper; a package without it
+      # installs fine but cannot record.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
+      run: |
+        DEB=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb)
+        dpkg -c "$DEB" | grep -q 'meeting-media/bin/alloomi-meeting-media$'
+        dpkg -c "$DEB" | grep -q 'meeting-media/manifest.json$'
 
     - name: Verify imessage-kit package files are in the standalone bundle
       # Regression guard for the v0.6.6 crash:
