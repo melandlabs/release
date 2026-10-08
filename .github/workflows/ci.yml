@@ -254,9 +254,10 @@ jobs:
           prefix-key: ${{ runner.os }}-${{ runner.arch }}
           if-no-files-found: warn
 
-      - name: Cache meeting media SDK downloads
+      - name: Restore meeting media SDK cache
+        id: meeting-media-cache
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: alloomi/.local-dev/gstreamer/downloads
           key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-macos-sdk.mjs') }}
@@ -267,6 +268,14 @@ jobs:
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
         working-directory: ./alloomi
         run: node scripts/meeting-media-probe/prepare-macos-sdk.mjs
+
+      - name: Save meeting media SDK cache
+        # Saved right after preparing so a later build failure keeps it.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: alloomi/.local-dev/gstreamer/downloads
+          key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
@@ -750,9 +759,10 @@ jobs:
           prefix-key: ${{ runner.os }}-${{ runner.arch }}
           if-no-files-found: warn
 
-      - name: Cache meeting media SDK downloads
+      - name: Restore meeting media SDK cache
+        id: meeting-media-cache
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: alloomi/.local-dev/gstreamer/downloads
           key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-macos-sdk.mjs') }}
@@ -763,6 +773,14 @@ jobs:
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
         working-directory: ./alloomi
         run: node scripts/meeting-media-probe/prepare-macos-sdk.mjs
+
+      - name: Save meeting media SDK cache
+        # Saved right after preparing so a later build failure keeps it.
+        if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: alloomi/.local-dev/gstreamer/downloads
+          key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
@@ -1254,12 +1272,13 @@ jobs:
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
       run: sudo apt-get install -y flex bison libglib2.0-dev libpulse-dev python3-venv
 
-    - name: Cache meeting media GStreamer SDK
+    - name: Restore meeting media SDK cache
       # Ubuntu 22.04 ships GStreamer 1.20; the media runtime needs >= 1.22, so
       # the SDK is compiled from pinned sources. The script only reuses a cached
       # SDK whose stamp matches the script that built it.
+      id: meeting-media-cache
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: |
           alloomi/.local-dev/gstreamer/downloads
@@ -1270,6 +1289,16 @@ jobs:
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
       working-directory: ./alloomi
       run: bash scripts/meeting-media-probe/prepare-linux-sdk.sh
+
+    - name: Save meeting media SDK cache
+      # Saved right after preparing so a later build failure keeps it.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          alloomi/.local-dev/gstreamer/downloads
+          alloomi/.local-dev/gstreamer/sdk
+        key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
@@ -1533,9 +1562,10 @@ jobs:
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
 
-    - name: Cache meeting media SDK installer
+    - name: Restore meeting media SDK cache
+      id: meeting-media-cache
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: alloomi/.local-dev/gstreamer/*.exe
         key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-windows-sdk.ps1') }}
@@ -1548,9 +1578,17 @@ jobs:
       shell: pwsh
       run: |
         ./scripts/meeting-media-probe/prepare-windows-sdk.ps1
-        if (-not (Get-Command pkg-config -ErrorAction SilentlyContinue)) {
-          choco install -y --no-progress pkgconfiglite
-        }
+        # Always install: Get-Command found a pkg-config on the runner that
+        # cargo's pkg-config crate could not run, so the build failed.
+        choco install -y --no-progress pkgconfiglite
+
+    - name: Save meeting media SDK cache
+      # Saved right after preparing so a later build failure keeps it.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: alloomi/.local-dev/gstreamer/*.exe
+        key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
@@ -1831,12 +1869,13 @@ jobs:
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
       run: sudo apt-get install -y flex bison libglib2.0-dev libpulse-dev python3-venv
 
-    - name: Cache meeting media GStreamer SDK
+    - name: Restore meeting media SDK cache
       # Ubuntu 22.04 ships GStreamer 1.20; the media runtime needs >= 1.22, so
       # the SDK is compiled from pinned sources. The script only reuses a cached
       # SDK whose stamp matches the script that built it.
+      id: meeting-media-cache
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: |
           alloomi/.local-dev/gstreamer/downloads
@@ -1847,6 +1886,16 @@ jobs:
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
       working-directory: ./alloomi
       run: bash scripts/meeting-media-probe/prepare-linux-sdk.sh
+
+    - name: Save meeting media SDK cache
+      # Saved right after preparing so a later build failure keeps it.
+      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          alloomi/.local-dev/gstreamer/downloads
+          alloomi/.local-dev/gstreamer/sdk
+        key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
