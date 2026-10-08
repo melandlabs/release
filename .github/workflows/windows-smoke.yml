@@ -1,0 +1,105 @@
+name: Alloomi Windows Install Smoke Test
+
+# Installs and launches the *published* Windows release, not a fresh build, so
+# this deliberately does not run on push -- it only tells us whether what users
+# download still installs and starts on real Windows 11.
+on:
+  schedule:
+    # 05:37 UTC daily, off the top of the hour to avoid the runner stampede.
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to test, e.g. v0.5.2 (blank = latest published release)'
+        required: false
+        type: string
+      launch_timeout_seconds:
+        description: 'How long to wait for the app to show a window (x64 emulation on the ARM runner is slow)'
+        required: false
+        default: '300'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-and-launch:
+    # Real Windows 11, but ARM64: the published installer is x64, so the app runs
+    # under the Windows 11 x64 emulation layer. GitHub has no x64 Windows 11
+    # image, so this is the closest genuine-Windows-11 runner available.
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    steps:
+    - name: Checkout release repo
+      uses: actions/checkout@v4
+
+    - name: Download published Windows installer
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ALLOOMI_RELEASE_REPO: 'melandlabs/release'
+        REQUESTED_VERSION: ${{ inputs.version }}
+      run: |
+        $tag = if ($env:REQUESTED_VERSION) {
+          $env:REQUESTED_VERSION
+        } else {
+          gh api "repos/$env:ALLOOMI_RELEASE_REPO/releases/latest" --jq .tag_name
+        }
+        if (-not $tag) { throw 'could not resolve a release tag to test' }
+
+        Write-Host "testing $tag"
+        "ALLOOMI_TAG=$tag" >> $env:GITHUB_ENV
+
+        gh release download $tag --repo $env:ALLOOMI_RELEASE_REPO `
+          --pattern '*_windows_amd64.exe' --dir installer
+
+    - name: Verify downloaded installer
+      shell: pwsh
+      run: |
+        $installer = Get-ChildItem installer\*_windows_amd64.exe -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        if (-not $installer) { throw 'no *_windows_amd64.exe was downloaded' }
+
+        # A failed download can leave an HTML error page behind; the real
+        # installer is ~80 MB.
+        if ($installer.Length -lt 40MB) {
+          throw "installer is only $([math]::Round($installer.Length / 1MB, 1)) MB -- the download probably failed"
+        }
+
+        Get-ChildItem installer | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+        "INSTALLER_PATH=$($installer.FullName)" >> $env:GITHUB_ENV
+
+    - name: Install and launch Alloomi
+      shell: pwsh
+      env:
+        LAUNCH_TIMEOUT: ${{ inputs.launch_timeout_seconds || '300' }}
+      run: ./tests/windows-smoke/smoke.ps1 -InstallerPath $env:INSTALLER_PATH -LaunchTimeoutSeconds $env:LAUNCH_TIMEOUT
+
+    - name: Upload smoke test screenshot
+      # Always, so a failed run still ships the window capture.
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: alloomi-windows-smoke-${{ env.ALLOOMI_TAG }}
+        path: smoke-artifacts/
+        if-no-files-found: ignore
+
+    - name: Uninstall Alloomi
+      if: always()
+      shell: pwsh
+      # Best effort: a cleanup failure is not a test failure, and every runner
+      # is fresh anyway.
+      run: |
+        $uninstaller = Get-ChildItem "$env:LOCALAPPDATA\Alloomi", "$env:ProgramFiles\Alloomi" `
+          -Filter 'uninstall.exe' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        if ($uninstaller) {
+          Start-Process $uninstaller.FullName -ArgumentList '/S', '/currentuser' -Wait
+          Write-Host "uninstalled via $($uninstaller.FullName)"
+        } else {
+          Write-Host '::warning::no uninstall.exe found; runner is discarded anyway'
+        }
