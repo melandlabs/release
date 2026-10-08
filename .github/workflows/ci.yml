@@ -46,6 +46,10 @@ jobs:
           fi
           echo "Commit: $(git log -1 --oneline)"
 
+      - name: Stamp nightly version with build date
+        id: nightly_version
+        run: bash scripts/bump-nightly-version.sh alloomi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -539,6 +543,10 @@ jobs:
             git checkout ${{ env.ALLOOMI_BRANCH }}
           fi
           echo "Commit: $(git log -1 --oneline)"
+
+      - name: Stamp nightly version with build date
+        id: nightly_version
+        run: bash scripts/bump-nightly-version.sh alloomi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -1041,6 +1049,11 @@ jobs:
         fi
         echo "Commit: $(git log -1 --oneline)"
 
+    - name: Stamp nightly version with build date
+      id: nightly_version
+      shell: bash
+      run: bash scripts/bump-nightly-version.sh alloomi
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -1364,6 +1377,11 @@ jobs:
         fi
         echo "Commit: $(git log -1 --oneline)"
 
+    - name: Stamp nightly version with build date
+      id: nightly_version
+      shell: bash
+      run: bash scripts/bump-nightly-version.sh alloomi
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
@@ -1648,7 +1666,12 @@ jobs:
           git checkout ${{ env.ALLOOMI_BRANCH }}
         fi
         echo "Commit: $(git log -1 --oneline)"
-  
+
+    - name: Stamp nightly version with build date
+      id: nightly_version
+      shell: bash
+      run: bash scripts/bump-nightly-version.sh alloomi
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
