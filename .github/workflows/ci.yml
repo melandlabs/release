@@ -281,6 +281,22 @@ jobs:
           path: alloomi/.local-dev/gstreamer/downloads
           key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
+      - name: Restore Next.js build cache
+        # The webpack production compile is the long pole of this job (85min of
+        # the 103min build step on 2026-10-08) and CI starts cold every run:
+        # "No build cache found". Webpack's persistent cache in .next/cache is
+        # content-addressed, so restoring an older snapshot still skips
+        # recompiling unchanged modules. Key: unique per run so the cache stays
+        # fresh (immutable entries), restore-keys picks the latest snapshot for
+        # this job/arch/lockfile. Bounded by the 10GB repo cache limit (LRU).
+        id: nextjs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: alloomi/apps/web/.next/cache
+          key: ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}-
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -298,6 +314,16 @@ jobs:
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
+
+      - name: Save Next.js build cache
+        # Right after the build so a later verify/sign failure keeps it. Even a
+        # partial cache from a failed compile is safe to save: entries are
+        # content-addressed and webpack discards stale ones on load.
+        if: ${{ always() && steps.nextjs-cache.outputs.cache-hit != 'true' && hashFiles('alloomi/apps/web/.next/cache') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: alloomi/apps/web/.next/cache
+          key: ${{ steps.nextjs-cache.outputs.cache-primary-key }}
 
       - name: Verify meeting media runtime is in the app bundle
         # Meeting recording runs through this helper; an app without it builds
