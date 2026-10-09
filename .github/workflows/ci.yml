@@ -285,6 +285,13 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
+          # Type errors are gated in melandlabs/alloomi (.github/workflows/test.yml
+          # runs `pnpm tsc` on every push to main). Re-running the check here
+          # duplicates that work AND is the memory peak that kills the runner:
+          # `next build` type-checks 2900+ files in-process with
+          # --max-old-space-size=12288, and the hosted runners get SIGTERMed
+          # during "Running TypeScript ...". This job only has to package.
+          SKIP_TYPE_CHECK: "true"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -794,6 +801,7 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
         env:
+          SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -1263,22 +1271,25 @@ jobs:
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
 
-    # GitHub-hosted ubuntu-22.04 runners ship with 16 GB RAM and no swap. The
-    # web/tauri build concurrently runs `next build --webpack` (V8 heap),
-    # `cargo` (Rust), and native deps (better-sqlite3, sqlite-vec). On a busy
-    # pool the OS reclaims memory before V8 can finish TypeScript checking,
-    # and the runner receives SIGTERM mid-build. Adding 8 GB of swap gives V8
-    # enough headroom for the 8 GB old-space ceiling without OOM-killing the
-    # cargo process.
+    # GitHub-hosted ubuntu-22.04 runners ship 16 GB RAM and only ~3 GB swap.
+    # The web/tauri build runs `next build --webpack` (V8 heap) alongside
+    # `cargo` (Rust) and native deps (better-sqlite3, sqlite-vec), and the peak
+    # pushes the VM past its memory budget, at which point the runner is
+    # SIGTERMed mid-build. Growing swap to 8 GB gives the build headroom.
+    #
+    # The runner image ALREADY ships a /swapfile, so the previous
+    # `if [ ! -f /swapfile ]` guard skipped every branch and the 8 GB never
+    # materialised (free -h kept reporting Swap: 3.0Gi). Always rebuild the
+    # file instead of only creating it when absent.
     - name: Configure swap (Linux only)
       if: runner.os == 'Linux'
       run: |
-        if [ ! -f /swapfile ]; then
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-        fi
+        sudo swapoff /swapfile 2>/dev/null || true
+        sudo rm -f /swapfile
+        sudo fallocate -l 8G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
         free -h
 
     - name: Install meeting media SDK build dependencies
@@ -1316,6 +1327,8 @@ jobs:
     - name: Build Tauri app (Linux)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
+      env:
+        SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
@@ -1613,6 +1626,7 @@ jobs:
       shell: bash
       run: pnpm tauri:build
       env:
+        SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
         RUSTUP_WINDOWS_PATH: 1
         TAURI_BUNDLE_TARGET: nsis
 
@@ -1874,18 +1888,18 @@ jobs:
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
 
-    # See ci-alloomi-linux-amd64 for the rationale; GitHub-hosted
-    # ubuntu-22.04-arm runners also ship 16 GB / no swap and need the same
-    # headroom for the concurrent `next build` + `cargo` workload.
+    # See ci-alloomi-linux-amd64 for the rationale; ubuntu-22.04-arm runners
+    # ship the same 16 GB / ~3 GB-swap baseline and already carry a
+    # /swapfile, so the file has to be rebuilt rather than skipped.
     - name: Configure swap (Linux only)
       if: runner.os == 'Linux'
       run: |
-        if [ ! -f /swapfile ]; then
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-        fi
+        sudo swapoff /swapfile 2>/dev/null || true
+        sudo rm -f /swapfile
+        sudo fallocate -l 8G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
         free -h
 
     - name: Install meeting media SDK build dependencies
@@ -1923,6 +1937,8 @@ jobs:
     - name: Build Tauri app (Linux ARM64)
       working-directory: ./alloomi/apps/web
       run: pnpm tauri:build
+      env:
+        SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
