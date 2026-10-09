@@ -336,6 +336,49 @@ jobs:
             console.log("OK: imessage-kit package files present in standalone bundle");
           '
 
+      - name: Verify pdf.js runtime files are in the standalone bundle
+        # Regression guard for the mailbox refresh hang: pdfjs-dist's legacy
+        # build runs `new DOMMatrix()` at module top level and polyfills it by
+        # require("@napi-rs/canvas"); the worker is loaded by dynamic path.
+        # Next's file tracing copies neither, so the import rejects, officeparser's
+        # fire-and-forget parsePdf() never invokes its callback, and
+        # parseOfficeAsync() stays pending forever -- holding that bot's slot in
+        # the serialized refresh queue until the app restarts. The script
+        # apps/web/scripts/fix-standalone-pnpm.js must land both into the
+        # standalone tree.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const nm = ".next/standalone/node_modules";
+            const missing = [
+              "@napi-rs/canvas/package.json",
+              "pdfjs-dist/legacy/build/pdf.worker.mjs",
+            ].filter(rel => !fs.existsSync(path.join(nm, rel)));
+            if (missing.length) {
+              console.error("ERROR: standalone is missing pdf.js runtime files: " + missing.join(", "));
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+              process.exit(1);
+            }
+            // Loading it proves the prebuilt binary matches this runner (a copy of
+            // the wrong platform still resolves on disk but fails to dlopen).
+            let DOMMatrix;
+            try {
+              ({ DOMMatrix } = require(path.resolve(nm, "@napi-rs/canvas")));
+              new DOMMatrix();
+            } catch (err) {
+              console.error("ERROR: @napi-rs/canvas is present but will not load on this runner: " + err.message);
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+              process.exit(1);
+            }
+            if (typeof DOMMatrix !== "function") {
+              console.error("ERROR: @napi-rs/canvas exposes no DOMMatrix; pdf.js cannot load under Node");
+              process.exit(1);
+            }
+            console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
+          '
+
       - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
         run: |
@@ -844,6 +887,49 @@ jobs:
               process.exit(1);
             }
             console.log("OK: imessage-kit package files present in standalone bundle");
+          '
+
+      - name: Verify pdf.js runtime files are in the standalone bundle
+        # Regression guard for the mailbox refresh hang: pdfjs-dist's legacy
+        # build runs `new DOMMatrix()` at module top level and polyfills it by
+        # require("@napi-rs/canvas"); the worker is loaded by dynamic path.
+        # Next's file tracing copies neither, so the import rejects, officeparser's
+        # fire-and-forget parsePdf() never invokes its callback, and
+        # parseOfficeAsync() stays pending forever -- holding that bot's slot in
+        # the serialized refresh queue until the app restarts. The script
+        # apps/web/scripts/fix-standalone-pnpm.js must land both into the
+        # standalone tree.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const nm = ".next/standalone/node_modules";
+            const missing = [
+              "@napi-rs/canvas/package.json",
+              "pdfjs-dist/legacy/build/pdf.worker.mjs",
+            ].filter(rel => !fs.existsSync(path.join(nm, rel)));
+            if (missing.length) {
+              console.error("ERROR: standalone is missing pdf.js runtime files: " + missing.join(", "));
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+              process.exit(1);
+            }
+            // Loading it proves the prebuilt binary matches this runner (a copy of
+            // the wrong platform still resolves on disk but fails to dlopen).
+            let DOMMatrix;
+            try {
+              ({ DOMMatrix } = require(path.resolve(nm, "@napi-rs/canvas")));
+              new DOMMatrix();
+            } catch (err) {
+              console.error("ERROR: @napi-rs/canvas is present but will not load on this runner: " + err.message);
+              console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+              process.exit(1);
+            }
+            if (typeof DOMMatrix !== "function") {
+              console.error("ERROR: @napi-rs/canvas exposes no DOMMatrix; pdf.js cannot load under Node");
+              process.exit(1);
+            }
+            console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
           '
 
       - name: Verify finalized app signatures
@@ -1367,6 +1453,49 @@ jobs:
           console.log("OK: imessage-kit package files present in standalone bundle");
         '
 
+    - name: Verify pdf.js runtime files are in the standalone bundle
+      # Regression guard for the mailbox refresh hang: pdfjs-dist's legacy
+      # build runs `new DOMMatrix()` at module top level and polyfills it by
+      # require("@napi-rs/canvas"); the worker is loaded by dynamic path.
+      # Next's file tracing copies neither, so the import rejects, officeparser's
+      # fire-and-forget parsePdf() never invokes its callback, and
+      # parseOfficeAsync() stays pending forever -- holding that bot's slot in
+      # the serialized refresh queue until the app restarts. The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land both into the
+      # standalone tree.
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const nm = ".next/standalone/node_modules";
+          const missing = [
+            "@napi-rs/canvas/package.json",
+            "pdfjs-dist/legacy/build/pdf.worker.mjs",
+          ].filter(rel => !fs.existsSync(path.join(nm, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing pdf.js runtime files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          // Loading it proves the prebuilt binary matches this runner (a copy of
+          // the wrong platform still resolves on disk but fails to dlopen).
+          let DOMMatrix;
+          try {
+            ({ DOMMatrix } = require(path.resolve(nm, "@napi-rs/canvas")));
+            new DOMMatrix();
+          } catch (err) {
+            console.error("ERROR: @napi-rs/canvas is present but will not load on this runner: " + err.message);
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          if (typeof DOMMatrix !== "function") {
+            console.error("ERROR: @napi-rs/canvas exposes no DOMMatrix; pdf.js cannot load under Node");
+            process.exit(1);
+          }
+          console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
+        '
+
     - name: Upload CI Linux binary
       uses: actions/upload-artifact@v4
       with:
@@ -1657,6 +1786,50 @@ jobs:
             process.exit(1);
           }
           console.log("OK: imessage-kit package files present in standalone bundle");
+        '
+
+    - name: Verify pdf.js runtime files are in the standalone bundle
+      # Regression guard for the mailbox refresh hang: pdfjs-dist's legacy
+      # build runs `new DOMMatrix()` at module top level and polyfills it by
+      # require("@napi-rs/canvas"); the worker is loaded by dynamic path.
+      # Next's file tracing copies neither, so the import rejects, officeparser's
+      # fire-and-forget parsePdf() never invokes its callback, and
+      # parseOfficeAsync() stays pending forever -- holding that bot's slot in
+      # the serialized refresh queue until the app restarts. The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land both into the
+      # standalone tree.
+      working-directory: ./alloomi/apps/web
+      shell: bash
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const nm = ".next/standalone/node_modules";
+          const missing = [
+            "@napi-rs/canvas/package.json",
+            "pdfjs-dist/legacy/build/pdf.worker.mjs",
+          ].filter(rel => !fs.existsSync(path.join(nm, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing pdf.js runtime files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          // Loading it proves the prebuilt binary matches this runner (a copy of
+          // the wrong platform still resolves on disk but fails to dlopen).
+          let DOMMatrix;
+          try {
+            ({ DOMMatrix } = require(path.resolve(nm, "@napi-rs/canvas")));
+            new DOMMatrix();
+          } catch (err) {
+            console.error("ERROR: @napi-rs/canvas is present but will not load on this runner: " + err.message);
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          if (typeof DOMMatrix !== "function") {
+            console.error("ERROR: @napi-rs/canvas exposes no DOMMatrix; pdf.js cannot load under Node");
+            process.exit(1);
+          }
+          console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
 
     - name: Upload CI Windows installer
@@ -1975,6 +2148,49 @@ jobs:
             process.exit(1);
           }
           console.log("OK: imessage-kit package files present in standalone bundle");
+        '
+
+    - name: Verify pdf.js runtime files are in the standalone bundle
+      # Regression guard for the mailbox refresh hang: pdfjs-dist's legacy
+      # build runs `new DOMMatrix()` at module top level and polyfills it by
+      # require("@napi-rs/canvas"); the worker is loaded by dynamic path.
+      # Next's file tracing copies neither, so the import rejects, officeparser's
+      # fire-and-forget parsePdf() never invokes its callback, and
+      # parseOfficeAsync() stays pending forever -- holding that bot's slot in
+      # the serialized refresh queue until the app restarts. The script
+      # apps/web/scripts/fix-standalone-pnpm.js must land both into the
+      # standalone tree.
+      working-directory: ./alloomi/apps/web
+      run: |
+        node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const nm = ".next/standalone/node_modules";
+          const missing = [
+            "@napi-rs/canvas/package.json",
+            "pdfjs-dist/legacy/build/pdf.worker.mjs",
+          ].filter(rel => !fs.existsSync(path.join(nm, rel)));
+          if (missing.length) {
+            console.error("ERROR: standalone is missing pdf.js runtime files: " + missing.join(", "));
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          // Loading it proves the prebuilt binary matches this runner (a copy of
+          // the wrong platform still resolves on disk but fails to dlopen).
+          let DOMMatrix;
+          try {
+            ({ DOMMatrix } = require(path.resolve(nm, "@napi-rs/canvas")));
+            new DOMMatrix();
+          } catch (err) {
+            console.error("ERROR: @napi-rs/canvas is present but will not load on this runner: " + err.message);
+            console.error("       See apps/web/scripts/fix-standalone-pnpm.js -- copyPdfRuntime step");
+            process.exit(1);
+          }
+          if (typeof DOMMatrix !== "function") {
+            console.error("ERROR: @napi-rs/canvas exposes no DOMMatrix; pdf.js cannot load under Node");
+            process.exit(1);
+          }
+          console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
 
     - name: Upload CI Linux ARM64 binary
