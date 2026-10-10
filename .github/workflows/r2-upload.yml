@@ -1,15 +1,26 @@
 name: Upload Release Artifacts to R2
 
 # Publishes CI-built artifacts to the alloomi R2 bucket with release-style
-# filenames (Alloomi_<version>_<platform>_<arch>.<ext>). Modeled on
-# .github/workflows/release-artifacts.yml from the release branch, but uploads
-# to R2 via the S3 API instead of creating a GitHub Release. Manual only.
+# filenames. Modeled on .github/workflows/release-artifacts.yml from the
+# release branch, but uploads to R2 via the S3 API instead of creating a
+# GitHub Release. Manual only.
+#
+# Flavors (keep them strictly apart):
+# - standard: the regular build. Publishes the full 5-file set and is the
+#   only variant allowed to move latest.json / release.json.
+# - outlook-china: customer variant built with enable_outlook_china=true.
+#   Its artifact set is typically PARTIAL (e.g. only macOS aarch64 + windows)
+#   and its runs are never the "latest successful ci.yml run", so a source
+#   run ID is mandatory. It never updates the manifest: release.json is
+#   shared with standard clients (see get_platform_download_filename in
+#   alloomi apps/web/src-tauri/src/update.rs) and pointing it at a version
+#   whose Alloomi_* files don't exist yet would break standard auto-updates.
 
 on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: 'Source CI run ID (optional, defaults to the latest successful ci.yml run)'
+        description: 'Source CI run ID. Required for outlook-china (the run dispatched with enable_outlook_china=true); optional for standard (defaults to the latest successful ci.yml run)'
         required: false
         type: string
       version:
@@ -17,7 +28,7 @@ on:
         required: false
         type: string
       variant:
-        description: 'Which CI artifact variant to publish. NOTE: for outlook-china pass the run ID of a CI run that was dispatched with enable_outlook_china=true.'
+        description: 'Which CI artifact variant to publish'
         required: true
         type: choice
         options:
@@ -25,20 +36,44 @@ on:
           - outlook-china
         default: standard
       update_latest:
-        description: 'Point latest.json and release.json at this version after the upload'
+        description: 'Point latest.json and release.json at this version after the upload. Only applies to the standard variant; outlook-china publishes always skip it.'
         required: true
         type: boolean
         default: true
 
 env:
   R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
-  # Current bucket convention (0.6.6+): linux uses arm64, macOS uses aarch64.
-  # Older releases mixed linux_aarch64; do not rename those retroactively.
+  # Filename convention must match alloomi's updater (apps/web/src-tauri/src/
+  # update.rs get_platform_download_filename): macOS aarch64, linux aarch64,
+  # windows amd64. Even though tauri's own deb is named *_arm64.deb, the
+  # published name has to be *_linux_aarch64.deb or arm64 clients 404 on R2.
 
 jobs:
   upload-to-r2:
     runs-on: ubuntu-22.04
     steps:
+      - name: Resolve run ID and naming
+        id: names
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.variant }}" = "outlook-china" ]; then
+            # ci.yml appends -outlook-china to every artifact name for this
+            # variant; bucket files use the Alloomi_outlook_china_ prefix
+            # (see the 0.6.5+ entries). These runs only exist when someone
+            # dispatched ci.yml with enable_outlook_china=true, and the
+            # "latest successful run" heuristic can never find them — the run
+            # ID has to be supplied explicitly.
+            if [ "${{ github.event.inputs.source_run_id }}" = "" ]; then
+              echo "ERROR: variant=outlook-china requires source_run_id (the CI run dispatched with enable_outlook_china=true)."
+              exit 1
+            fi
+            echo "artifact_suffix=-outlook-china" >> $GITHUB_OUTPUT
+            echo "name_prefix=Alloomi_outlook_china_" >> $GITHUB_OUTPUT
+          else
+            echo "artifact_suffix=" >> $GITHUB_OUTPUT
+            echo "name_prefix=Alloomi_" >> $GITHUB_OUTPUT
+          fi
+
       - name: Find latest CI run
         if: github.event.inputs.source_run_id == ''
         id: find-run
@@ -48,33 +83,35 @@ jobs:
           RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-      - name: Resolve run ID and naming
-        id: names
+      - name: Resolve source run ID
+        id: source
         run: |
           echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
-          if [ "${{ inputs.variant }}" = "outlook-china" ]; then
-            # ci.yml appends -outlook-china to every artifact name for this variant;
-            # bucket files use the Alloomi_outlook_china_ prefix (see 0.6.5/0.6.6 entries).
-            echo "artifact_suffix=-outlook-china" >> $GITHUB_OUTPUT
-            echo "name_prefix=Alloomi_outlook_china_" >> $GITHUB_OUTPUT
-          else
-            echo "artifact_suffix=" >> $GITHUB_OUTPUT
-            echo "name_prefix=Alloomi_" >> $GITHUB_OUTPUT
-          fi
 
       - name: Download CI artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
-          # Multiple -n flags each extract into dl/<artifact-name>/.
-          gh run download "${{ steps.names.outputs.run_id }}" -R ${{ github.repository }} -D dl \
-            -n "alloomi-ci-linux${SUFFIX}" \
-            -n "alloomi-ci-linux-arm64${SUFFIX}" \
-            -n "alloomi-ci-dmg-macos${SUFFIX}" \
-            -n "alloomi-ci-dmg-x64${SUFFIX}" \
-            -n "alloomi-ci-windows${SUFFIX}"
+          RUN_ID="${{ steps.source.outputs.run_id }}"
+          # No -e: a missing artifact must not abort the loop, we tally below.
+          ARTIFACTS="alloomi-ci-linux${SUFFIX} alloomi-ci-linux-arm64${SUFFIX} alloomi-ci-dmg-macos${SUFFIX} alloomi-ci-dmg-x64${SUFFIX} alloomi-ci-windows${SUFFIX}"
+          MISSING=0
+          for a in $ARTIFACTS; do
+            if ! gh run download "$RUN_ID" -R ${{ github.repository }} -D "dl/$a" -n "$a"; then
+              echo "WARN: artifact $a not found in run $RUN_ID"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          if [ "${{ inputs.variant }}" = "standard" ] && [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: standard publishes require the full 5-artifact set; $MISSING missing."
+            exit 1
+          fi
+          if [ ! -d dl ] || [ -z "$(ls -A dl)" ]; then
+            echo "ERROR: no artifacts downloaded. Is run $RUN_ID a ${{ inputs.variant }} run?"
+            exit 1
+          fi
 
       - name: Rename artifacts to release filenames
         id: meta
@@ -83,43 +120,68 @@ jobs:
           SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
           PREFIX="${{ steps.names.outputs.name_prefix }}"
 
-          # Derive the version from the linux amd64 deb: tauri names it
-          # alloomi_<version>_amd64.deb, carrying either a stable version
-          # (0.6.7) or the nightly stamp (0.6.8-nightly.20261010).
-          DEB=$(find "dl/alloomi-ci-linux${SUFFIX}" -name '*.deb' | head -n1)
-          BASE=$(basename "$DEB")
-          DERIVED="${BASE#alloomi_}"
-          DERIVED="${DERIVED%_amd64.deb}"
+          # Derive the version from whatever artifact is available: tauri
+          # names files alloomi_<version>_{amd64,arm64}.deb,
+          # Alloomi_<version>_{aarch64,x64}.dmg, alloomi_<version>_x64-setup.exe
+          # (stable 0.6.7 or nightly 0.6.8-nightly.20261010). outlook-china
+          # sets are partial, so the linux amd64 deb is not guaranteed.
           VERSION="${{ inputs.version }}"
-          VERSION="${VERSION:-$DERIVED}"
+          if [ -z "$VERSION" ]; then
+            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.dmg' -o -name '*.exe' \) | head -n1)
+            BASE=$(basename "$ANY")
+            BASE="${BASE#alloomi_}"; BASE="${BASE#Alloomi_}"
+            VERSION=$(echo "$BASE" | sed -E 's/\.(deb|dmg|exe)$//; s/_(amd64|arm64|aarch64|x64)(-setup)?$//')
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: could not derive a version; pass the version input explicitly."
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Publishing version: $VERSION (derived from $BASE)"
+          echo "Publishing ${{ inputs.variant }} version: $VERSION"
 
           mkdir -p artifacts
-          mv "$(find "dl/alloomi-ci-linux${SUFFIX}" -name '*.deb' | head -n1)" "artifacts/${PREFIX}${VERSION}_linux_amd64.deb"
-          mv "$(find "dl/alloomi-ci-linux-arm64${SUFFIX}" -name '*.deb' | head -n1)" "artifacts/${PREFIX}${VERSION}_linux_arm64.deb"
-          mv "$(find "dl/alloomi-ci-dmg-macos${SUFFIX}" -name '*.dmg' | head -n1)" "artifacts/${PREFIX}${VERSION}_macOS_aarch64.dmg"
-          mv "$(find "dl/alloomi-ci-dmg-x64${SUFFIX}" -name '*.dmg' | head -n1)" "artifacts/${PREFIX}${VERSION}_macOS_amd64.dmg"
-          mv "$(find "dl/alloomi-ci-windows${SUFFIX}" -name '*.exe' | head -n1)" "artifacts/${PREFIX}${VERSION}_windows_amd64.exe"
+          # <artifact-dir> <glob> <published name>; skips artifacts the run didn't produce.
+          rename() {
+            local src
+            # || true: with pipefail, find on a dir this run didn't produce
+            # would otherwise abort the whole step — missing artifacts are
+            # legal for the outlook-china variant.
+            src=$(find "dl/$1" -name "$2" -type f 2>/dev/null | head -n1 || true)
+            [ -n "$src" ] || return 0
+            mv "$src" "artifacts/$3"
+            echo "renamed: $3"
+          }
+          rename "alloomi-ci-linux${SUFFIX}"        '*.deb' "${PREFIX}${VERSION}_linux_amd64.deb"
+          rename "alloomi-ci-linux-arm64${SUFFIX}"  '*.deb' "${PREFIX}${VERSION}_linux_aarch64.deb"
+          rename "alloomi-ci-dmg-macos${SUFFIX}"    '*.dmg' "${PREFIX}${VERSION}_macOS_aarch64.dmg"
+          rename "alloomi-ci-dmg-x64${SUFFIX}"      '*.dmg' "${PREFIX}${VERSION}_macOS_amd64.dmg"
+          rename "alloomi-ci-windows${SUFFIX}"      '*.exe' "${PREFIX}${VERSION}_windows_amd64.exe"
           ls -la artifacts/
 
-      - name: Verify artifact count and version
+      - name: Verify artifacts
         run: |
           set -euo pipefail
           PREFIX="${{ steps.names.outputs.name_prefix }}"
           VERSION="${{ steps.meta.outputs.version }}"
           COUNT=$(ls artifacts | wc -l)
-          if [ "$COUNT" != "5" ]; then
+          if [ "${{ inputs.variant }}" = "standard" ] && [ "$COUNT" != "5" ]; then
             echo "ERROR: expected 5 artifacts, found $COUNT"
+            exit 1
+          fi
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: nothing to publish"
             exit 1
           fi
           # Guard against publishing a build whose embedded version does not
           # match the filename version (same check as the release branch).
-          DEB_VER=$(dpkg-deb -I "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" | awk '$1 == "Version:" { print $2 }')
-          echo "deb control version: $DEB_VER"
-          if [ "$DEB_VER" != "$VERSION" ]; then
-            echo "ERROR: artifact version mismatch! Expected $VERSION, got $DEB_VER"
-            exit 1
+          # Only possible when the linux amd64 deb is part of this publish.
+          if [ -f "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" ]; then
+            DEB_VER=$(dpkg-deb -I "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" | awk '$1 == "Version:" { print $2 }')
+            echo "deb control version: $DEB_VER"
+            if [ "$DEB_VER" != "$VERSION" ]; then
+              echo "ERROR: artifact version mismatch! Expected $VERSION, got $DEB_VER"
+              exit 1
+            fi
           fi
 
       - name: Upload artifacts to R2
@@ -135,7 +197,9 @@ jobs:
           done
 
       - name: Update latest.json and release.json
-        if: inputs.update_latest
+        # The manifest is shared with standard clients, so only a standard
+        # publish — the full 5-file set — may move the version pointer.
+        if: inputs.update_latest && inputs.variant == 'standard'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
