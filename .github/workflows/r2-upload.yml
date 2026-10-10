@@ -1,0 +1,157 @@
+name: Upload Release Artifacts to R2
+
+# Publishes CI-built artifacts to the alloomi R2 bucket with release-style
+# filenames (Alloomi_<version>_<platform>_<arch>.<ext>). Modeled on
+# .github/workflows/release-artifacts.yml from the release branch, but uploads
+# to R2 via the S3 API instead of creating a GitHub Release. Manual only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Source CI run ID (optional, defaults to the latest successful ci.yml run)'
+        required: false
+        type: string
+      version:
+        description: 'Version to publish, e.g. 0.6.7 (optional, defaults to the version stamped inside the artifacts)'
+        required: false
+        type: string
+      variant:
+        description: 'Which CI artifact variant to publish. NOTE: for outlook-china pass the run ID of a CI run that was dispatched with enable_outlook_china=true.'
+        required: true
+        type: choice
+        options:
+          - standard
+          - outlook-china
+        default: standard
+      update_latest:
+        description: 'Point latest.json and release.json at this version after the upload'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  # Current bucket convention (0.6.6+): linux uses arm64, macOS uses aarch64.
+  # Older releases mixed linux_aarch64; do not rename those retroactively.
+
+jobs:
+  upload-to-r2:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Find latest CI run
+        if: github.event.inputs.source_run_id == ''
+        id: find-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Resolve run ID and naming
+        id: names
+        run: |
+          echo "run_id=${{ github.event.inputs.source_run_id || steps.find-run.outputs.run_id }}" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.variant }}" = "outlook-china" ]; then
+            # ci.yml appends -outlook-china to every artifact name for this variant;
+            # bucket files use the Alloomi_outlook_china_ prefix (see 0.6.5/0.6.6 entries).
+            echo "artifact_suffix=-outlook-china" >> $GITHUB_OUTPUT
+            echo "name_prefix=Alloomi_outlook_china_" >> $GITHUB_OUTPUT
+          else
+            echo "artifact_suffix=" >> $GITHUB_OUTPUT
+            echo "name_prefix=Alloomi_" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download CI artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
+          # Multiple -n flags each extract into dl/<artifact-name>/.
+          gh run download "${{ steps.names.outputs.run_id }}" -R ${{ github.repository }} -D dl \
+            -n "alloomi-ci-linux${SUFFIX}" \
+            -n "alloomi-ci-linux-arm64${SUFFIX}" \
+            -n "alloomi-ci-dmg-macos${SUFFIX}" \
+            -n "alloomi-ci-dmg-x64${SUFFIX}" \
+            -n "alloomi-ci-windows${SUFFIX}"
+
+      - name: Rename artifacts to release filenames
+        id: meta
+        run: |
+          set -euo pipefail
+          SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
+          PREFIX="${{ steps.names.outputs.name_prefix }}"
+
+          # Derive the version from the linux amd64 deb: tauri names it
+          # alloomi_<version>_amd64.deb, carrying either a stable version
+          # (0.6.7) or the nightly stamp (0.6.8-nightly.20261010).
+          DEB=$(find "dl/alloomi-ci-linux${SUFFIX}" -name '*.deb' | head -n1)
+          BASE=$(basename "$DEB")
+          DERIVED="${BASE#alloomi_}"
+          DERIVED="${DERIVED%_amd64.deb}"
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION:-$DERIVED}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION (derived from $BASE)"
+
+          mkdir -p artifacts
+          mv "$(find "dl/alloomi-ci-linux${SUFFIX}" -name '*.deb' | head -n1)" "artifacts/${PREFIX}${VERSION}_linux_amd64.deb"
+          mv "$(find "dl/alloomi-ci-linux-arm64${SUFFIX}" -name '*.deb' | head -n1)" "artifacts/${PREFIX}${VERSION}_linux_arm64.deb"
+          mv "$(find "dl/alloomi-ci-dmg-macos${SUFFIX}" -name '*.dmg' | head -n1)" "artifacts/${PREFIX}${VERSION}_macOS_aarch64.dmg"
+          mv "$(find "dl/alloomi-ci-dmg-x64${SUFFIX}" -name '*.dmg' | head -n1)" "artifacts/${PREFIX}${VERSION}_macOS_amd64.dmg"
+          mv "$(find "dl/alloomi-ci-windows${SUFFIX}" -name '*.exe' | head -n1)" "artifacts/${PREFIX}${VERSION}_windows_amd64.exe"
+          ls -la artifacts/
+
+      - name: Verify artifact count and version
+        run: |
+          set -euo pipefail
+          PREFIX="${{ steps.names.outputs.name_prefix }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          COUNT=$(ls artifacts | wc -l)
+          if [ "$COUNT" != "5" ]; then
+            echo "ERROR: expected 5 artifacts, found $COUNT"
+            exit 1
+          fi
+          # Guard against publishing a build whose embedded version does not
+          # match the filename version (same check as the release branch).
+          DEB_VER=$(dpkg-deb -I "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" | awk '$1 == "Version:" { print $2 }')
+          echo "deb control version: $DEB_VER"
+          if [ "$DEB_VER" != "$VERSION" ]; then
+            echo "ERROR: artifact version mismatch! Expected $VERSION, got $DEB_VER"
+            exit 1
+          fi
+
+      - name: Upload artifacts to R2
+        working-directory: artifacts
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          set -euo pipefail
+          for f in *; do
+            aws s3 cp "$f" "s3://${{ vars.R2_BUCKET }}/$f" --endpoint-url "$R2_ENDPOINT" --region auto
+          done
+
+      - name: Update latest.json and release.json
+        if: inputs.update_latest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          set -euo pipefail
+          # Keep the exact 2-space-indent shape already in the bucket.
+          printf '{\n  "version": "%s"\n}\n' "${{ steps.meta.outputs.version }}" > latest.json
+          cat latest.json
+          aws s3 cp latest.json "s3://${{ vars.R2_BUCKET }}/latest.json" --endpoint-url "$R2_ENDPOINT" --region auto
+          aws s3 cp latest.json "s3://${{ vars.R2_BUCKET }}/release.json" --endpoint-url "$R2_ENDPOINT" --region auto
+
+      - name: Verify bucket listing
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          aws s3 ls "s3://${{ vars.R2_BUCKET }}/" --endpoint-url "$R2_ENDPOINT" --region auto | grep "${{ steps.meta.outputs.version }}"
