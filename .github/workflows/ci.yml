@@ -28,21 +28,44 @@ env:
 jobs:
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
-    runs-on: macos-14
+    # macos-15 rather than macos-14. Both are documented at 14 GB of free disk,
+    # but the images are not equally padded: macos-14 preinstalls a dozen Xcode
+    # copies including four 26.x releases, while macos-15 tops out at 16.2 with
+    # 15.4 selected -- so the arm64 runner starts this job with materially more
+    # room, which is what the 2026-10-12 ENOSPC runs needed. The macOS 14 images
+    # also begin deprecation on 2026-07-06 and stop being supported on
+    # 2026-11-02 (actions/runner-images#13518), so this had to move regardless.
+    # Cache keys carry only runner.os + runner.arch (macOS / ARM64), so the pnpm
+    # store, Rust target and webpack caches survive the label change.
+    runs-on: macos-15
     env:
       SKIP_SIGNING: 'false'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
 
+      - name: Free runner disk space
+        # Before the clone and the installs: the stock image ships a dozen
+        # Xcodes and the iOS/watchOS simulator runtimes, none of which this job
+        # uses, and the build needs every spare gigabyte. See the script for
+        # what it prunes and for the MIN_FREE_GB guard.
+        run: bash scripts/free-macos-build-disk.sh
+
       - name: Clone alloomi source code (main branch)
         run: |
-          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          # --depth 1: nothing in the build reads history, and a full clone
+          # costs ~800 MB of .git on a 14 GB runner -- disk the webpack cache
+          # and the .next/standalone copy need more. It also keeps
+          # hashFiles('alloomi/**/pnpm-lock.yaml') under its 120 s ceiling,
+          # since that glob walks .git too and blew it on the Intel runners.
+          git clone --depth 1 --single-branch --branch "${{ env.ALLOOMI_BRANCH }}" \
+            https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
           if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
-            git checkout ${{ github.event.inputs.commit_sha }}
-          else
-            git checkout ${{ env.ALLOOMI_BRANCH }}
+            # A shallow clone only carries the branch tip, so an explicitly
+            # requested commit has to be fetched on its own.
+            git fetch --depth 1 origin "${{ github.event.inputs.commit_sha }}"
+            git checkout "${{ github.event.inputs.commit_sha }}"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
@@ -258,6 +281,19 @@ jobs:
           prefix-key: ${{ runner.os }}-${{ runner.arch }}
           if-no-files-found: warn
 
+      - name: Drop the previous run's app bundle from the Rust cache
+        # Swatinem/rust-cache archives all of target/, so after a successful
+        # run it also carries target/release/bundle: the signed .app and the
+        # notarized DMG that build produced. cargo never reads any of it, but it
+        # is gigabytes of dead weight restored onto a 14 GB runner right when the
+        # webpack cache and the .next/standalone copy need the same disk.
+        run: |
+          BUNDLE=alloomi/apps/web/src-tauri/target/release/bundle
+          if [ -d "$BUNDLE" ]; then
+            du -sh "$BUNDLE"
+            rm -rf "$BUNDLE"
+          fi
+
       - name: Restore meeting media SDK cache
         id: meeting-media-cache
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
@@ -297,6 +333,12 @@ jobs:
           restore-keys: |
             ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}-
 
+      - name: Report free disk before the build
+        # The number that matters: every cache is restored by now, and this is
+        # the headroom `next build` has to fit its webpack cache and the
+        # .next/standalone file-tracing copy into.
+        run: df -h "$GITHUB_WORKSPACE"
+
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
         run: pnpm tauri:build
@@ -324,6 +366,11 @@ jobs:
         with:
           path: alloomi/apps/web/.next/cache
           key: ${{ steps.nextjs-cache.outputs.cache-primary-key }}
+
+      - name: Reclaim the webpack cache once it is saved
+        # The cache lives in the Actions cache store by now, so the on-disk copy
+        # is just competing with the DMG and notarize steps for the same disk.
+        run: rm -rf alloomi/apps/web/.next/cache
 
       - name: Verify meeting media runtime is in the app bundle
         # Meeting recording runs through this helper; an app without it builds
@@ -599,6 +646,14 @@ jobs:
         with:
           name: alloomi-ci-dmg-macos${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+
+      - name: Drop the app bundle before the Rust cache is saved
+        # Last step on purpose: the DMG is uploaded, so nothing else needs
+        # target/release/bundle. The post-job Swatinem/rust-cache save
+        # archives all of target/, and leaving the .app and DMG in place is
+        # what made the next run restore gigabytes of a stale artifact --
+        # see "Drop the previous run's app bundle from the Rust cache".
+        run: rm -rf alloomi/apps/web/src-tauri/target/release/bundle
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
