@@ -121,7 +121,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          # Name the lockfile rather than globbing alloomi/**: the recursive
+          # pattern walks every directory in the checkout, .git included, and
+          # blew the 120 s hashFiles ceiling on 2026-10-10 and 2026-10-11 --
+          # the job died in template evaluation, before any build step ran.
+          # alloomi carries exactly one pnpm-lock.yaml, at its root.
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
@@ -727,7 +732,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
+          # Name the lockfile rather than globbing alloomi/**: the recursive
+          # pattern walks every directory in the checkout, .git included, and
+          # blew the 120 s hashFiles ceiling on 2026-10-10 and 2026-10-11 --
+          # the job died in template evaluation, before any build step ran.
+          # alloomi carries exactly one pnpm-lock.yaml, at its root.
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
