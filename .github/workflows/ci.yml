@@ -28,22 +28,15 @@ env:
 jobs:
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
-    # macos-15-xlarge rather than macos-15. The standard macos-15 arm64 runner
-    # is 3 vCPU / 7 GB -- the smallest in this workflow -- and 7 GB is not enough
-    # to build this app with webpack's in-memory cache: on 2026-10-13 that job
-    # died with "FATAL ERROR: Reached heap limit" after 36 min, GC-thrashing at
-    # 5 GB for the last 85 s of it. The same commit's macos-15-intel job (14 GB,
-    # no heap cap) finished in 53 min with a 9.6 min compile, so RAM is the only
-    # difference that matters. macos-15-xlarge is the arm64 half of the larger
-    # runners: 5 vCPU / 14 GB / 14 GB SSD. Note it is NOT `macos-15-large`,
-    # which is x64 Intel -- this job has to stay arm64 or it would package an
-    # x86_64 app. At $0.102/min it costs more per minute than the $0.062
-    # standard runner, but 53 min x $0.102 is still cheaper than the 123 min
-    # the same build took on the old configuration.
+    # macos-15, not macos-15-xlarge. The larger runner would be the right call
+    # on paper -- 14 GB instead of 7 GB -- but melandlabs has no larger runner
+    # provisioned, so on 2026-10-13 the xlarge job failed in 4 s with zero
+    # steps and no runner assigned (#29). Until an org admin creates one, this
+    # job has to make do with the 3 vCPU / 7 GB standard runner.
     #
     # Cache keys carry only runner.os + runner.arch (macOS / ARM64), neither of
     # which changes here, so the pnpm store and Rust target caches survive.
-    runs-on: macos-15-xlarge
+    runs-on: macos-15
     env:
       SKIP_SIGNING: 'false'
     steps:
@@ -356,11 +349,10 @@ jobs:
         # `next build` has to fit its webpack cache and the .next/standalone
         # file-tracing copy into.
         #
-        # Memory: macos-15-xlarge is a 5 vCPU / 14 GB M2 runner. The point of
-        # printing this is that a 7 GB runner cannot build this app at all --
-        # see the `runs-on` comment. If this ever reports a runner well under
-        # 14 GB, the label silently fell back to a standard runner and the
-        # build will OOM.
+        # Memory: macos-15 is a 3 vCPU / 7 GB M1 runner, the smallest in this
+        # workflow (ubuntu-22.04 and windows-2022 both get 4 vCPU / 16 GB).
+        # That is why the build step below opts back into the webpack
+        # filesystem cache -- the in-memory one does not fit in 7 GB.
         #
         # There is deliberately NO swap step here, unlike the Linux job's
         # 8 GB /swapfile. GitHub's macOS runners boot with swapping switched
@@ -388,12 +380,19 @@ jobs:
           # --max-old-space-size=12288, and the hosted runners get SIGTERMed
           # during "Running TypeScript ...". This job only has to package.
           SKIP_TYPE_CHECK: "true"
-          # No heap cap here. The build scripts hardcode
-          # --max-old-space-size=12288, which is a developer's-laptop number;
-          # on the previous 7 GB runner that ceiling was larger than the whole
-          # VM and the job OOM'd. The runner is now 14 GB -- the same machine
-          # the macos-15-intel job already builds this successfully on with no
-          # cap at all -- so the default is left alone rather than tuned.
+          # 7 GB is not enough for webpack's in-memory cache: on 2026-10-13
+          # this job died with "FATAL ERROR: Reached heap limit" after 36 min,
+          # GC-thrashing at 5 GB for the last 85 s. The in-memory cache holds
+          # the whole compilation inside the V8 heap; the filesystem cache
+          # streams it to disk instead, which keeps the heap bounded and is
+          # what this job used successfully before #3837 made the in-memory
+          # cache the default. It is slower -- roughly 123 min for the whole
+          # job -- but it finishes.
+          #
+          # No heap cap either. With the filesystem cache the build never got
+          # near the hardcoded --max-old-space-size=12288, so the default is
+          # left alone rather than tuned.
+          ALLOOMI_WEBPACK_FS_CACHE: "1"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
