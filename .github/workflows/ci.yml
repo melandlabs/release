@@ -1542,6 +1542,10 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
+        # alloomi#3837 flipped webpack's persistent cache to opt-in,
+        # which would drop this job to { type: "memory" }. This platform is
+        # out of scope for the macOS speedup, so pin the previous behavior.
+        ALLOOMI_WEBPACK_FS_CACHE: "1"
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
@@ -1883,6 +1887,10 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
+        # alloomi#3837 flipped webpack's persistent cache to opt-in,
+        # which would drop this job to { type: "memory" }. This platform is
+        # out of scope for the macOS speedup, so pin the previous behavior.
+        ALLOOMI_WEBPACK_FS_CACHE: "1"
         RUSTUP_WINDOWS_PATH: 1
         TAURI_BUNDLE_TARGET: nsis
 
@@ -2239,6 +2247,10 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
+        # alloomi#3837 flipped webpack's persistent cache to opt-in,
+        # which would drop this job to { type: "memory" }. This platform is
+        # out of scope for the macOS speedup, so pin the previous behavior.
+        ALLOOMI_WEBPACK_FS_CACHE: "1"
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
