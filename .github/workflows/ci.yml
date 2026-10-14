@@ -1855,13 +1855,22 @@ jobs:
         prefix-key: ${{ runner.os }}-${{ runner.arch }}
         if-no-files-found: warn
 
-    - name: Restore meeting media SDK cache
-      id: meeting-media-cache
+    - name: Fetch pinned GStreamer SDK
+      # freedesktop.org truncates and stalls this ~500 MB transfer, and the
+      # repo sits at the 10 GB Actions cache limit so the cached copy kept
+      # getting evicted, which forced a fresh download on most runs. Pull the
+      # pinned archive from a release asset instead: GitHub's CDN is stable
+      # and the file no longer competes for the cache budget.
       if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
-      uses: actions/cache/restore@v4
-      with:
-        path: alloomi/.local-dev/gstreamer/*.exe
-        key: gstreamer-downloads-${{ runner.os }}-${{ hashFiles('alloomi/scripts/meeting-media-probe/prepare-windows-sdk.ps1') }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p alloomi/.local-dev/gstreamer
+        gh release download gstreamer-sdk-1.28.7 \
+          --repo melandlabs/release \
+          --pattern 'gstreamer-1.0-msvc-x86_64-1.28.7.exe' \
+          --dir alloomi/.local-dev/gstreamer
 
     - name: Prepare meeting media GStreamer SDK
       # tauri:build packages the private meeting media runtime first
@@ -1870,18 +1879,12 @@ jobs:
       working-directory: ./alloomi
       shell: pwsh
       run: |
+        # Finds the archive placed by the step above and verifies its pinned
+        # SHA256; only falls back to downloading when it is absent.
         ./scripts/meeting-media-probe/prepare-windows-sdk.ps1
         # Always install: Get-Command found a pkg-config on the runner that
         # cargo's pkg-config crate could not run, so the build failed.
         choco install -y --no-progress pkgconfiglite
-
-    - name: Save meeting media SDK cache
-      # Saved right after preparing so a later build failure keeps it.
-      if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != '' && steps.meeting-media-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: alloomi/.local-dev/gstreamer/*.exe
-        key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
     - name: Build Tauri app (Windows)
       working-directory: ./alloomi/apps/web
