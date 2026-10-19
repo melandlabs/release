@@ -161,9 +161,23 @@ jobs:
           # actually fires (pnpm otherwise sees the package as "already
           # installed" and skips it).
           pnpm rebuild better-sqlite3
-          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
-          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+          # Keep the nested slot under imessage-kit either absent or a real
+          # package. A directory that holds only the native binary shadows
+          # the complete root copy: Node's ESM resolver stops at the first
+          # `better-sqlite3` directory it finds, so `import("better-sqlite3")`
+          # inside imessage-kit rejects with ERR_MODULE_NOT_FOUND and the
+          # packaged app reports "better-sqlite3 is required for Node.js
+          # runtime" when it opens ~/Library/Messages/chat.db.
+          nested=node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+          if [ -d "$nested" ] && [ ! -f "$nested/package.json" ]; then
+            echo "removing binary-only nested better-sqlite3 (it shadows the root copy)"
+            rm -rf "$nested"
+          fi
+          if [ -f "$nested/package.json" ]; then
+            mkdir -p "$nested/build/Release"
+            cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+               "$nested/build/Release/better_sqlite3.node"
+          fi
 
       - name: Verify native modules are Node v22 compatible
         working-directory: ./alloomi
@@ -813,9 +827,23 @@ jobs:
           # actually fires (pnpm otherwise sees the package as "already
           # installed" and skips it).
           pnpm rebuild better-sqlite3
-          mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
-          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-             node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+          # Keep the nested slot under imessage-kit either absent or a real
+          # package. A directory that holds only the native binary shadows
+          # the complete root copy: Node's ESM resolver stops at the first
+          # `better-sqlite3` directory it finds, so `import("better-sqlite3")`
+          # inside imessage-kit rejects with ERR_MODULE_NOT_FOUND and the
+          # packaged app reports "better-sqlite3 is required for Node.js
+          # runtime" when it opens ~/Library/Messages/chat.db.
+          nested=node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+          if [ -d "$nested" ] && [ ! -f "$nested/package.json" ]; then
+            echo "removing binary-only nested better-sqlite3 (it shadows the root copy)"
+            rm -rf "$nested"
+          fi
+          if [ -f "$nested/package.json" ]; then
+            mkdir -p "$nested/build/Release"
+            cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+               "$nested/build/Release/better_sqlite3.node"
+          fi
 
       - name: Verify native modules are Node v22 compatible
         working-directory: ./alloomi
@@ -1372,9 +1400,23 @@ jobs:
         # actually fires (pnpm otherwise sees the package as "already
         # installed" and skips it).
         pnpm rebuild better-sqlite3
-        mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
-        cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-           node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+        # Keep the nested slot under imessage-kit either absent or a real
+        # package. A directory that holds only the native binary shadows
+        # the complete root copy: Node's ESM resolver stops at the first
+        # `better-sqlite3` directory it finds, so `import("better-sqlite3")`
+        # inside imessage-kit rejects with ERR_MODULE_NOT_FOUND and the
+        # packaged app reports "better-sqlite3 is required for Node.js
+        # runtime" when it opens ~/Library/Messages/chat.db.
+        nested=node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+        if [ -d "$nested" ] && [ ! -f "$nested/package.json" ]; then
+          echo "removing binary-only nested better-sqlite3 (it shadows the root copy)"
+          rm -rf "$nested"
+        fi
+        if [ -f "$nested/package.json" ]; then
+          mkdir -p "$nested/build/Release"
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             "$nested/build/Release/better_sqlite3.node"
+        fi
 
     - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
@@ -1738,9 +1780,23 @@ jobs:
         # actually fires (pnpm otherwise sees the package as "already
         # installed" and skips it).
         pnpm rebuild better-sqlite3
-        mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
-        cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-           node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+        # Keep the nested slot under imessage-kit either absent or a real
+        # package. A directory that holds only the native binary shadows
+        # the complete root copy: Node's ESM resolver stops at the first
+        # `better-sqlite3` directory it finds, so `import("better-sqlite3")`
+        # inside imessage-kit rejects with ERR_MODULE_NOT_FOUND and the
+        # packaged app reports "better-sqlite3 is required for Node.js
+        # runtime" when it opens ~/Library/Messages/chat.db.
+        nested=node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+        if [ -d "$nested" ] && [ ! -f "$nested/package.json" ]; then
+          echo "removing binary-only nested better-sqlite3 (it shadows the root copy)"
+          rm -rf "$nested"
+        fi
+        if [ -f "$nested/package.json" ]; then
+          mkdir -p "$nested/build/Release"
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             "$nested/build/Release/better_sqlite3.node"
+        fi
 
     - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
@@ -2090,9 +2146,23 @@ jobs:
         # actually fires (pnpm otherwise sees the package as "already
         # installed" and skips it).
         pnpm rebuild better-sqlite3
-        mkdir -p node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build
-        cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-           node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3/build/better_sqlite3.node
+        # Keep the nested slot under imessage-kit either absent or a real
+        # package. A directory that holds only the native binary shadows
+        # the complete root copy: Node's ESM resolver stops at the first
+        # `better-sqlite3` directory it finds, so `import("better-sqlite3")`
+        # inside imessage-kit rejects with ERR_MODULE_NOT_FOUND and the
+        # packaged app reports "better-sqlite3 is required for Node.js
+        # runtime" when it opens ~/Library/Messages/chat.db.
+        nested=node_modules/@photon-ai/imessage-kit/node_modules/better-sqlite3
+        if [ -d "$nested" ] && [ ! -f "$nested/package.json" ]; then
+          echo "removing binary-only nested better-sqlite3 (it shadows the root copy)"
+          rm -rf "$nested"
+        fi
+        if [ -f "$nested/package.json" ]; then
+          mkdir -p "$nested/build/Release"
+          cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+             "$nested/build/Release/better_sqlite3.node"
+        fi
 
     - name: Verify native modules are Node v22 compatible
       working-directory: ./alloomi
