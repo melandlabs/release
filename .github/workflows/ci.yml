@@ -335,38 +335,20 @@ jobs:
           path: alloomi/.local-dev/gstreamer/downloads
           key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
-      - name: Restore Next.js build cache
-        # The webpack production compile is the long pole of this job (85min of
-        # the 103min build step on 2026-10-08) and CI starts cold every run:
-        # "No build cache found". Webpack's persistent cache in .next/cache is
-        # content-addressed, so restoring an older snapshot still skips
-        # recompiling unchanged modules. Key: unique per run so the cache stays
-        # fresh (immutable entries), restore-keys picks the latest snapshot for
-        # this job/arch/lockfile. Bounded by the 10GB repo cache limit (LRU).
-        id: nextjs-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: alloomi/apps/web/.next/cache
-          # Name the lockfile rather than globbing alloomi/**: the recursive
-          # pattern walks every file in the checkout -- .git and the hoisted
-          # node_modules tree alike (see .npmrc's node-linker=hoisted) -- and
-          # blew the 120s hashFiles ceiling on 2026-10-10/11. This step runs
-          # AFTER pnpm install, so the walk is at its largest here. Same fix
-          # as the pnpm store key above; alloomi carries exactly one
-          # pnpm-lock.yaml, at its root.
-          key: ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/pnpm-lock.yaml') }}-
-
       - name: Report runner memory and disk before the build
         # Disk: every cache is restored by now, and this is the headroom
-        # `next build` has to fit its webpack cache and the .next/standalone
-        # file-tracing copy into.
+        # `next build` has to fit the .next/standalone file-tracing copy
+        # into. There is no Next.js build cache to restore any more: the
+        # build runs on Turbopack, whose persistent build cache
+        # (experimental.turbopackFileSystemCacheForBuild) is off by default,
+        # so a restored webpack cache would only be dead weight on a runner
+        # that already hit ENOSPC twice.
         #
         # Memory: macos-15 is a 3 vCPU / 7 GB M1 runner, the smallest in this
         # workflow (ubuntu-22.04 and windows-2022 both get 4 vCPU / 16 GB).
-        # That is why the build step below opts back into the webpack
-        # filesystem cache -- the in-memory one does not fit in 7 GB.
+        # That used to force the webpack filesystem cache, because webpack's
+        # in-memory cache does not fit in 7 GB. The build below runs on
+        # Turbopack now, which has no V8 heap ceiling to run into.
         #
         # There is deliberately NO swap step here, unlike the Linux job's
         # 8 GB /swapfile. GitHub's macOS runners boot with swapping switched
@@ -394,19 +376,22 @@ jobs:
           # --max-old-space-size=12288, and the hosted runners get SIGTERMed
           # during "Running TypeScript ...". This job only has to package.
           SKIP_TYPE_CHECK: "true"
-          # 7 GB is not enough for webpack's in-memory cache: on 2026-10-13
-          # this job died with "FATAL ERROR: Reached heap limit" after 36 min,
-          # GC-thrashing at 5 GB for the last 85 s. The in-memory cache holds
-          # the whole compilation inside the V8 heap; the filesystem cache
-          # streams it to disk instead, which keeps the heap bounded and is
-          # what this job used successfully before #3837 made the in-memory
-          # cache the default. It is slower -- roughly 123 min for the whole
-          # job -- but it finishes.
+          # Turbopack for the Next.js production build, not webpack.
           #
-          # No heap cap either. With the filesystem cache the build never got
-          # near the hardcoded --max-old-space-size=12288, so the default is
-          # left alone rather than tuned.
-          ALLOOMI_WEBPACK_FS_CACHE: "1"
+          # webpack keeps its whole module graph in the V8 heap, and on the
+          # 7 GB macos-15 runner it did not fit: on 2026-10-13 this job died
+          # with "FATAL ERROR: Reached heap limit" after 36 min, GC-thrashing
+          # at 5 GB for the last 85 s. The workaround was webpack's filesystem
+          # cache (ALLOOMI_WEBPACK_FS_CACHE=1), which keeps the heap bounded
+          # but has to serialize the entire compilation to disk and read it
+          # back -- roughly 123 min for the whole job, plus multi-GB of
+          # runner disk on a runner that already hit ENOSPC twice.
+          #
+          # Turbopack compiles in Rust with its own allocator: there is no V8
+          # heap ceiling to hit, and no persistent build cache to write
+          # (experimental.turbopackFileSystemCacheForBuild defaults to
+          # false). Same Next.js output, a fraction of the time and disk.
+          USE_TURBOPACK: "true"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -414,20 +399,53 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
-      - name: Save Next.js build cache
-        # Right after the build so a later verify/sign failure keeps it. Even a
-        # partial cache from a failed compile is safe to save: entries are
-        # content-addressed and webpack discards stale ones on load.
-        if: ${{ always() && steps.nextjs-cache.outputs.cache-hit != 'true' && hashFiles('alloomi/apps/web/.next/cache') != '' }}
-        uses: actions/cache/save@v4
-        with:
-          path: alloomi/apps/web/.next/cache
-          key: ${{ steps.nextjs-cache.outputs.cache-primary-key }}
-
-      - name: Reclaim the webpack cache once it is saved
-        # The cache lives in the Actions cache store by now, so the on-disk copy
-        # is just competing with the DMG and notarize steps for the same disk.
-        run: rm -rf alloomi/apps/web/.next/cache
+      - name: Verify the standalone bundle is not bloated
+        # The .next/standalone tree is shipped verbatim inside the .app bundle
+        # (see src-tauri/tauri.conf.json), so everything the file tracer drags
+        # in is paid for twice: once in runner disk and once in the notarized
+        # DMG.
+        #
+        # Turbopack's file tracer cannot narrow a path it resolved at runtime
+        # (homedir(), process.cwd() + a dynamic suffix, ...): it records a bare
+        # "<dynamic>" pattern, which expands to every file under the project
+        # root -- src-tauri/target (~5 GB) and the test tree (~1 GB) included.
+        # outputFileTracingExcludes cannot help either, because Next.js traces
+        # the instrumentation entry point with page_name = None and only builds
+        # the exclude glob when a page name exists. So the alloomi repo prunes
+        # the over-traced paths afterwards, in
+        # apps/web/scripts/fix-standalone-pnpm.js. This step is the guard that
+        # the prune keeps working: without it the .app grows past 10 GB.
+        working-directory: ./alloomi/apps/web
+        run: |
+          STANDALONE=.next/standalone
+          test -d "$STANDALONE" || { echo "ERROR: $STANDALONE is missing"; exit 1; }
+          for dir in apps/web/src-tauri apps/web/tests apps/web/cli-bundle/.claude; do
+            if [ -d "$STANDALONE/$dir" ]; then
+              echo "ERROR: the standalone bundle contains $dir/ -- the file tracer globbed the working directory"
+              exit 1
+            fi
+          done
+          # A stray .env in the bundle would ship the build machine's secrets.
+          for env_file in "$STANDALONE"/apps/web/.env "$STANDALONE"/apps/web/.env.*; do
+            if [ -f "$env_file" ]; then
+              echo "ERROR: the standalone bundle contains $env_file"
+              exit 1
+            fi
+          done
+          # The monorepo root package.json decides the module type of every
+          # .js file under skills/ that has no package.json of its own. Without
+          # it those ESM scripts are parsed as CommonJS and die on their first
+          # import statement.
+          test -f "$STANDALONE/package.json" || {
+            echo "ERROR: $STANDALONE/package.json is missing -- the bundled skill scripts would be parsed as CommonJS"
+            exit 1
+          }
+          SIZE_KB=$(du -sk "$STANDALONE" | awk '{print $1}')
+          echo "standalone size: $((SIZE_KB / 1024)) MB"
+          if [ "$SIZE_KB" -gt 2097152 ]; then
+            echo "ERROR: the standalone bundle is $((SIZE_KB / 1024)) MB, expected well under 2 GB"
+            exit 1
+          fi
 
       - name: Verify meeting media runtime is in the app bundle
         # Meeting recording runs through this helper; an app without it builds
@@ -1002,12 +1020,63 @@ jobs:
         run: pnpm tauri:build
         env:
           SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
+          # Same Turbopack switch as the arm64 job -- see the comment there
+          # for why webpack's V8-heap module graph does not fit these runners.
+          USE_TURBOPACK: "true"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
+
+      - name: Verify the standalone bundle is not bloated
+        # The .next/standalone tree is shipped verbatim inside the .app bundle
+        # (see src-tauri/tauri.conf.json), so everything the file tracer drags
+        # in is paid for twice: once in runner disk and once in the notarized
+        # DMG.
+        #
+        # Turbopack's file tracer cannot narrow a path it resolved at runtime
+        # (homedir(), process.cwd() + a dynamic suffix, ...): it records a bare
+        # "<dynamic>" pattern, which expands to every file under the project
+        # root -- src-tauri/target (~5 GB) and the test tree (~1 GB) included.
+        # outputFileTracingExcludes cannot help either, because Next.js traces
+        # the instrumentation entry point with page_name = None and only builds
+        # the exclude glob when a page name exists. So the alloomi repo prunes
+        # the over-traced paths afterwards, in
+        # apps/web/scripts/fix-standalone-pnpm.js. This step is the guard that
+        # the prune keeps working: without it the .app grows past 10 GB.
+        working-directory: ./alloomi/apps/web
+        run: |
+          STANDALONE=.next/standalone
+          test -d "$STANDALONE" || { echo "ERROR: $STANDALONE is missing"; exit 1; }
+          for dir in apps/web/src-tauri apps/web/tests apps/web/cli-bundle/.claude; do
+            if [ -d "$STANDALONE/$dir" ]; then
+              echo "ERROR: the standalone bundle contains $dir/ -- the file tracer globbed the working directory"
+              exit 1
+            fi
+          done
+          # A stray .env in the bundle would ship the build machine's secrets.
+          for env_file in "$STANDALONE"/apps/web/.env "$STANDALONE"/apps/web/.env.*; do
+            if [ -f "$env_file" ]; then
+              echo "ERROR: the standalone bundle contains $env_file"
+              exit 1
+            fi
+          done
+          # The monorepo root package.json decides the module type of every
+          # .js file under skills/ that has no package.json of its own. Without
+          # it those ESM scripts are parsed as CommonJS and die on their first
+          # import statement.
+          test -f "$STANDALONE/package.json" || {
+            echo "ERROR: $STANDALONE/package.json is missing -- the bundled skill scripts would be parsed as CommonJS"
+            exit 1
+          }
+          SIZE_KB=$(du -sk "$STANDALONE" | awk '{print $1}')
+          echo "standalone size: $((SIZE_KB / 1024)) MB"
+          if [ "$SIZE_KB" -gt 2097152 ]; then
+            echo "ERROR: the standalone bundle is $((SIZE_KB / 1024)) MB, expected well under 2 GB"
+            exit 1
+          fi
 
       - name: Verify meeting media runtime is in the app bundle
         # Meeting recording runs through this helper; an app without it builds
@@ -1586,10 +1655,10 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
-        # alloomi#3837 flipped webpack's persistent cache to opt-in,
-        # which would drop this job to { type: "memory" }. This platform is
-        # out of scope for the macOS speedup, so pin the previous behavior.
-        ALLOOMI_WEBPACK_FS_CACHE: "1"
+        # No ALLOOMI_WEBPACK_FS_CACHE here: webpack's persistent cache only
+        # pays off when the same checkout is built twice, and a CI job starts
+        # from a fresh clone, so the multi-GB serialize + write buys nothing.
+        # See the cache block in melandlabs/alloomi's apps/web/next.config.js.
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
@@ -1948,10 +2017,11 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
-        # alloomi#3837 flipped webpack's persistent cache to opt-in,
-        # which would drop this job to { type: "memory" }. This platform is
-        # out of scope for the macOS speedup, so pin the previous behavior.
-        ALLOOMI_WEBPACK_FS_CACHE: "1"
+        # No ALLOOMI_WEBPACK_FS_CACHE here: webpack's persistent cache only
+        # pays off when the same checkout is built twice, and a CI job starts
+        # from a fresh clone, so the multi-GB serialize + write buys nothing.
+        # See the cache block in melandlabs/alloomi's apps/web/next.config.js.
+        # On Windows the app's config forces { type: "memory" } regardless.
         RUSTUP_WINDOWS_PATH: 1
         TAURI_BUNDLE_TARGET: nsis
 
@@ -2322,10 +2392,10 @@ jobs:
       run: pnpm tauri:build
       env:
         SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
-        # alloomi#3837 flipped webpack's persistent cache to opt-in,
-        # which would drop this job to { type: "memory" }. This platform is
-        # out of scope for the macOS speedup, so pin the previous behavior.
-        ALLOOMI_WEBPACK_FS_CACHE: "1"
+        # No ALLOOMI_WEBPACK_FS_CACHE here: webpack's persistent cache only
+        # pays off when the same checkout is built twice, and a CI job starts
+        # from a fresh clone, so the multi-GB serialize + write buys nothing.
+        # See the cache block in melandlabs/alloomi's apps/web/next.config.js.
 
     - name: Verify meeting media runtime is in the deb
       # Meeting recording runs through this helper; a package without it
