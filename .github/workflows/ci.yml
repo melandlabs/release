@@ -287,6 +287,42 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Patch tauri.conf.* to skip bundler on macOS (Apple Silicon)
+        # Tauri's own DMG bundler (bundle_dmg.sh) lays the disk image out via
+        # Finder/AppleScript, which needs a running Aqua session. The hosted
+        # runners have none, so the script hangs and the job dies with
+        # "failed to bundle project error running bundle_dmg.sh" after the
+        # bundler times out. It hit on 2026-10-21 and again on 2026-10-22
+        # (2 of the last 4 runs).
+        #
+        # The DMG this job ships is built by the "Create DMG (beautified, from
+        # signed app)" step further down, via beautify-dmg.js — that path is
+        # headless-safe (it falls back to the committed .DS_Store template
+        # instead of driving Finder). So Tauri's DMG is redundant work: skip
+        # it here. The .app bundle is still produced and signed.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e "
+            const fs = require('fs');
+            // 'pnpm tauri:build' reads whichever regional config ALLOOMI_REGION
+            // picks (default: intl → tauri.conf.intl.json); the .json files for
+            // intl/cn/dev shadow the base, so patching only tauri.conf.json was
+            // a no-op. Loop over every regional config to cover ALLOOMI_REGION
+            // = intl|cn|dev and the base for non-CI builds.
+            const paths = [
+              'src-tauri/tauri.conf.json',
+              'src-tauri/tauri.conf.intl.json',
+              'src-tauri/tauri.conf.cn.json',
+              'src-tauri/tauri.conf.dev.json',
+            ];
+            for (const path of paths) {
+              const c = JSON.parse(fs.readFileSync(path, 'utf8'));
+              c.bundle.targets = ['app'];
+              fs.writeFileSync(path, JSON.stringify(c, null, 2));
+              console.log('Patched ' + path + ' targets to app');
+            }
+          "
+
       - name: Cache Rust build (cargo registry + target)
         uses: Swatinem/rust-cache@v2
         with:
