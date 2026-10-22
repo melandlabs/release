@@ -288,18 +288,29 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
       - name: Patch tauri.conf.* to skip bundler on macOS (Apple Silicon)
-        # Tauri's own DMG bundler (bundle_dmg.sh) lays the disk image out via
-        # Finder/AppleScript, which needs a running Aqua session. The hosted
-        # runners have none, so the script hangs and the job dies with
-        # "failed to bundle project error running bundle_dmg.sh" after the
-        # bundler times out. It hit on 2026-10-21 and again on 2026-10-22
-        # (2 of the last 4 runs).
+        # Tauri's own DMG bundler (bundle_dmg.sh) fails on this job and the
+        # job dies with:
+        #   failed to bundle project error running bundle_dmg.sh
+        #   `failed to run .../target/release/bundle/dmg/bundle_dmg.sh`
+        #
+        # It is not flaky: every Turbopack run died exactly there (2026-10-21,
+        # 2026-10-22 and the 2026-10-22 re-run -- 3 of 3), and every webpack
+        # run before that passed the same step (2026-10-18/19/20 -- 3 of 3).
+        # The Turbopack switch (#33) is what made it fatal: Turbopack's file
+        # tracer globs the whole working directory, so the standalone tree the
+        # .app embeds grew from well under 1 GB to ~3 GB (2994 MB before the
+        # prune in fix-standalone-pnpm.js), and Tauri's bundler cannot handle
+        # that payload. Tauri runs bundle_dmg.sh through `.output()` and drops
+        # the script's stdout/stderr, so the log carries no diagnostics beyond
+        # the one-liner above -- which is why the failing step inside the
+        # script is not identified here.
         #
         # The DMG this job ships is built by the "Create DMG (beautified, from
-        # signed app)" step further down, via beautify-dmg.js — that path is
+        # signed app)" step further down, via beautify-dmg.js -- that path is
         # headless-safe (it falls back to the committed .DS_Store template
         # instead of driving Finder). So Tauri's DMG is redundant work: skip
-        # it here. The .app bundle is still produced and signed.
+        # it here. The .app bundle is still produced and signed, and the
+        # `rm -f "$DMG_DIR"/Alloomi*.dmg` further down becomes a no-op.
         working-directory: ./alloomi/apps/web
         run: |
           node -e "
@@ -403,7 +414,12 @@ jobs:
 
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
-        run: pnpm tauri:build
+        # /usr/bin/time -l reports the peak RSS of the whole build tree plus
+        # the pageout/swap counters, which is the only place the memory
+        # pressure of the build shows up in the log. The runner has no swap,
+        # so a build that outgrows its RAM shows up as a climbing "Pageouts"
+        # count and a multi-minute stall instead of an error.
+        run: /usr/bin/time -l pnpm tauri:build
         env:
           # Type errors are gated in melandlabs/alloomi (.github/workflows/test.yml
           # runs `pnpm tsc` on every push to main). Re-running the check here
@@ -428,12 +444,47 @@ jobs:
           # (experimental.turbopackFileSystemCacheForBuild defaults to
           # false). Same Next.js output, a fraction of the time and disk.
           USE_TURBOPACK: "true"
+          # Memory caps for the 7 GB macos-15 runner. The build scripts
+          # hardcode --max-old-space-size=8192, i.e. a V8 ceiling larger than
+          # the whole VM, and the runner has no swap (see the memory report
+          # step above). macOS then has to keep the working set in the
+          # compressor, and the build crawls instead of failing fast.
+          #
+          # ALLOOMI_MAX_OLD_SPACE_SIZE is read by alloomi's
+          # apps/web/scripts/run-cross-env.cjs, which rewrites the ceiling
+          # in NODE_OPTIONS. It was set to 5120 for this job back in 47a3157,
+          # dropped in 7f82e71 when the job moved to the 14 GB
+          # macos-15-xlarge runner, and never restored when 64fb4bc moved it
+          # back to the 7 GB macos-15 because no xlarge runner is
+          # provisioned. Turbopack needs far less V8 than webpack did (the
+          # module graph lives in Rust, not in the heap), so 3 GB is ample
+          # for the Next.js CLI and leaves the machine room to breathe.
+          ALLOOMI_MAX_OLD_SPACE_SIZE: "3072"
+          # Turbopack's Rust allocations sit outside the V8 heap, so
+          # --max-old-space-size does not bound them. Without a limit the
+          # Turbopack process and the V8 heap together outgrow the VM.
+          # alloomi's next.config.js maps this env var to
+          # experimental.turbopackMemoryLimit (bytes); 2 GiB.
+          NEXT_TURBOPACK_MEMORY_LIMIT: "2147483648"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
+
+      - name: Report runner memory and disk after the build
+        # The counterpart of the report before the build: it shows what the
+        # build left behind (the .next tree plus the restored Rust target) and
+        # how much of the 7 GB was still claimable afterwards. A build that
+        # ended with almost nothing free is the one that spent its time in
+        # the compressor.
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          echo "--- memory ---"
+          sysctl -n hw.memsize | awk '{printf "physical: %d MB\n", $1 / 1048576}'
+          sysctl vm.swapusage || true
+          memory_pressure 2>/dev/null | head -5 || true
 
       - name: Verify the standalone bundle is not bloated
         # The .next/standalone tree is shipped verbatim inside the .app bundle
