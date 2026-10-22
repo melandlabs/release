@@ -287,6 +287,52 @@ jobs:
           # List keychains to ensure system can access certificates
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Patch tauri.conf.* to skip bundler on macOS (Apple Silicon)
+        # Tauri's own DMG bundler is redundant work on this job. The DMG we
+        # ship is built further down by "Create DMG (beautified, from signed
+        # app)" via beautify-dmg.js, which is headless-safe (it falls back to
+        # the committed .DS_Store template instead of driving Finder), so
+        # Tauri's DMG is thrown away right after.
+        #
+        # It is also the step that killed the job while the build ran on
+        # Turbopack (2026-10-21, 2026-10-22 and the 2026-10-22 re-run --
+        # 3 of 3): "failed to bundle project error running bundle_dmg.sh".
+        # Turbopack's file tracer globs the whole working directory, so the
+        # standalone tree the .app embeds grew from well under 1 GB to ~3 GB
+        # (2994 MB before the prune in fix-standalone-pnpm.js), and Tauri's
+        # bundler could not handle that payload. Tauri runs bundle_dmg.sh
+        # through `.output()` and drops the script's stdout/stderr, so the log
+        # carries no diagnostics beyond the one-liner above.
+        #
+        # The build runs on webpack again (see the build step below), so the
+        # payload is small enough for the bundler again -- but skipping it
+        # still saves the 4-9 min it took to run, and the Intel job has
+        # skipped it for much longer. The .app bundle is still produced and
+        # signed, and the `rm -f "$DMG_DIR"/Alloomi*.dmg` further down
+        # becomes a no-op.
+        working-directory: ./alloomi/apps/web
+        run: |
+          node -e "
+            const fs = require('fs');
+            // 'pnpm tauri:build' reads whichever regional config ALLOOMI_REGION
+            // picks (default: intl → tauri.conf.intl.json); the .json files for
+            // intl/cn/dev shadow the base, so patching only tauri.conf.json was
+            // a no-op. Loop over every regional config to cover ALLOOMI_REGION
+            // = intl|cn|dev and the base for non-CI builds.
+            const paths = [
+              'src-tauri/tauri.conf.json',
+              'src-tauri/tauri.conf.intl.json',
+              'src-tauri/tauri.conf.cn.json',
+              'src-tauri/tauri.conf.dev.json',
+            ];
+            for (const path of paths) {
+              const c = JSON.parse(fs.readFileSync(path, 'utf8'));
+              c.bundle.targets = ['app'];
+              fs.writeFileSync(path, JSON.stringify(c, null, 2));
+              console.log('Patched ' + path + ' targets to app');
+            }
+          "
+
       - name: Cache Rust build (cargo registry + target)
         uses: Swatinem/rust-cache@v2
         with:
@@ -335,20 +381,38 @@ jobs:
           path: alloomi/.local-dev/gstreamer/downloads
           key: ${{ steps.meeting-media-cache.outputs.cache-primary-key }}
 
+      - name: Restore Next.js build cache
+        # The webpack production compile is the long pole of this job (75min of
+        # the 94min build step on 2026-10-20) and CI starts cold every run:
+        # "No build cache found". Webpack's persistent cache in .next/cache is
+        # content-addressed, so restoring an older snapshot still skips
+        # recompiling unchanged modules. Key: unique per run so the cache stays
+        # fresh (immutable entries), restore-keys picks the latest snapshot for
+        # this job/arch/lockfile. Bounded by the 10GB repo cache limit (LRU).
+        id: nextjs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: alloomi/apps/web/.next/cache
+          # Name the lockfile rather than globbing alloomi/**: the recursive
+          # pattern walks every file in the checkout -- .git and the hoisted
+          # node_modules tree alike (see .npmrc's node-linker=hoisted) -- and
+          # blew the 120s hashFiles ceiling on 2026-10-10/11. This step runs
+          # AFTER pnpm install, so the walk is at its largest here. Same fix
+          # as the pnpm store key above; alloomi carries exactly one
+          # pnpm-lock.yaml, at its root.
+          key: ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ github.job }}-nextjs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('alloomi/pnpm-lock.yaml') }}-
+
       - name: Report runner memory and disk before the build
         # Disk: every cache is restored by now, and this is the headroom
-        # `next build` has to fit the .next/standalone file-tracing copy
-        # into. There is no Next.js build cache to restore any more: the
-        # build runs on Turbopack, whose persistent build cache
-        # (experimental.turbopackFileSystemCacheForBuild) is off by default,
-        # so a restored webpack cache would only be dead weight on a runner
-        # that already hit ENOSPC twice.
+        # `next build` has to fit its webpack cache and the .next/standalone
+        # file-tracing copy into.
         #
         # Memory: macos-15 is a 3 vCPU / 7 GB M1 runner, the smallest in this
         # workflow (ubuntu-22.04 and windows-2022 both get 4 vCPU / 16 GB).
-        # That used to force the webpack filesystem cache, because webpack's
-        # in-memory cache does not fit in 7 GB. The build below runs on
-        # Turbopack now, which has no V8 heap ceiling to run into.
+        # That is why the build step below opts back into the webpack
+        # filesystem cache -- the in-memory one does not fit in 7 GB.
         #
         # There is deliberately NO swap step here, unlike the Linux job's
         # 8 GB /swapfile. GitHub's macOS runners boot with swapping switched
@@ -367,7 +431,12 @@ jobs:
 
       - name: Build Tauri app (Apple Silicon)
         working-directory: ./alloomi/apps/web
-        run: pnpm tauri:build
+        # /usr/bin/time -l reports the peak RSS of the whole build tree plus
+        # the pageout/swap counters, which is the only place the memory
+        # pressure of the build shows up in the log. The runner has no swap,
+        # so a build that outgrows its RAM shows up as a climbing "Pageouts"
+        # count and a multi-minute stall instead of an error.
+        run: /usr/bin/time -l pnpm tauri:build
         env:
           # Type errors are gated in melandlabs/alloomi (.github/workflows/test.yml
           # runs `pnpm tsc` on every push to main). Re-running the check here
@@ -376,22 +445,19 @@ jobs:
           # --max-old-space-size=12288, and the hosted runners get SIGTERMed
           # during "Running TypeScript ...". This job only has to package.
           SKIP_TYPE_CHECK: "true"
-          # Turbopack for the Next.js production build, not webpack.
+          # 7 GB is not enough for webpack's in-memory cache: on 2026-10-13
+          # this job died with "FATAL ERROR: Reached heap limit" after 36 min,
+          # GC-thrashing at 5 GB for the last 85 s. The in-memory cache holds
+          # the whole compilation inside the V8 heap; the filesystem cache
+          # streams it to disk instead, which keeps the heap bounded and is
+          # what this job used successfully before #3837 made the in-memory
+          # cache the default. It is slower -- but with the Next.js build
+          # cache restored above it lands around 75 min for the compile.
           #
-          # webpack keeps its whole module graph in the V8 heap, and on the
-          # 7 GB macos-15 runner it did not fit: on 2026-10-13 this job died
-          # with "FATAL ERROR: Reached heap limit" after 36 min, GC-thrashing
-          # at 5 GB for the last 85 s. The workaround was webpack's filesystem
-          # cache (ALLOOMI_WEBPACK_FS_CACHE=1), which keeps the heap bounded
-          # but has to serialize the entire compilation to disk and read it
-          # back -- roughly 123 min for the whole job, plus multi-GB of
-          # runner disk on a runner that already hit ENOSPC twice.
-          #
-          # Turbopack compiles in Rust with its own allocator: there is no V8
-          # heap ceiling to hit, and no persistent build cache to write
-          # (experimental.turbopackFileSystemCacheForBuild defaults to
-          # false). Same Next.js output, a fraction of the time and disk.
-          USE_TURBOPACK: "true"
+          # No heap cap either. With the filesystem cache the build never got
+          # near the hardcoded --max-old-space-size, so the default is left
+          # alone rather than tuned.
+          ALLOOMI_WEBPACK_FS_CACHE: "1"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -399,20 +465,49 @@ jobs:
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
 
+      - name: Save Next.js build cache
+        # Right after the build so a later verify/sign failure keeps it. Even a
+        # partial cache from a failed compile is safe to save: entries are
+        # content-addressed and webpack discards stale ones on load.
+        if: ${{ always() && steps.nextjs-cache.outputs.cache-hit != 'true' && hashFiles('alloomi/apps/web/.next/cache') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: alloomi/apps/web/.next/cache
+          key: ${{ steps.nextjs-cache.outputs.cache-primary-key }}
+
+      - name: Reclaim the webpack cache once it is saved
+        # The cache lives in the Actions cache store by now, so the on-disk copy
+        # is just competing with the DMG and notarize steps for the same disk.
+        run: rm -rf alloomi/apps/web/.next/cache
+
+      - name: Report runner memory and disk after the build
+        # The counterpart of the report before the build: it shows what the
+        # build left behind (the .next tree plus the restored Rust target) and
+        # how much of the 7 GB was still claimable afterwards. A build that
+        # ended with almost nothing free is the one that spent its time in
+        # the compressor.
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          echo "--- memory ---"
+          sysctl -n hw.memsize | awk '{printf "physical: %d MB\n", $1 / 1048576}'
+          sysctl vm.swapusage || true
+          memory_pressure 2>/dev/null | head -5 || true
+
       - name: Verify the standalone bundle is not bloated
         # The .next/standalone tree is shipped verbatim inside the .app bundle
         # (see src-tauri/tauri.conf.json), so everything the file tracer drags
         # in is paid for twice: once in runner disk and once in the notarized
         # DMG.
         #
-        # Turbopack's file tracer cannot narrow a path it resolved at runtime
+        # The file tracer can widen a path it resolved at runtime
         # (homedir(), process.cwd() + a dynamic suffix, ...): it records a bare
         # "<dynamic>" pattern, which expands to every file under the project
         # root -- src-tauri/target (~5 GB) and the test tree (~1 GB) included.
-        # outputFileTracingExcludes cannot help either, because Next.js traces
-        # the instrumentation entry point with page_name = None and only builds
-        # the exclude glob when a page name exists. So the alloomi repo prunes
-        # the over-traced paths afterwards, in
+        # That is exactly what the Turbopack runs of 2026-10-21/22 traced
+        # (2994 MB before the prune). outputFileTracingExcludes cannot help
+        # either, because Next.js traces the instrumentation entry point with
+        # page_name = None and only builds the exclude glob when a page name
+        # exists. The alloomi repo prunes the over-traced paths afterwards, in
         # apps/web/scripts/fix-standalone-pnpm.js. This step is the guard that
         # the prune keeps working: without it the .app grows past 10 GB.
         working-directory: ./alloomi/apps/web
@@ -1020,9 +1115,9 @@ jobs:
         run: pnpm tauri:build
         env:
           SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
-          # Same Turbopack switch as the arm64 job -- see the comment there
-          # for why webpack's V8-heap module graph does not fit these runners.
-          USE_TURBOPACK: "true"
+          # Plain webpack, like before #33. This runner is macos-15-intel
+          # (14 GB), so webpack's in-memory module graph fits and there is no
+          # need for the filesystem cache the arm64 job has to use.
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -1036,14 +1131,15 @@ jobs:
         # in is paid for twice: once in runner disk and once in the notarized
         # DMG.
         #
-        # Turbopack's file tracer cannot narrow a path it resolved at runtime
+        # The file tracer can widen a path it resolved at runtime
         # (homedir(), process.cwd() + a dynamic suffix, ...): it records a bare
         # "<dynamic>" pattern, which expands to every file under the project
         # root -- src-tauri/target (~5 GB) and the test tree (~1 GB) included.
-        # outputFileTracingExcludes cannot help either, because Next.js traces
-        # the instrumentation entry point with page_name = None and only builds
-        # the exclude glob when a page name exists. So the alloomi repo prunes
-        # the over-traced paths afterwards, in
+        # That is exactly what the Turbopack runs of 2026-10-21/22 traced
+        # (2994 MB before the prune). outputFileTracingExcludes cannot help
+        # either, because Next.js traces the instrumentation entry point with
+        # page_name = None and only builds the exclude glob when a page name
+        # exists. The alloomi repo prunes the over-traced paths afterwards, in
         # apps/web/scripts/fix-standalone-pnpm.js. This step is the guard that
         # the prune keeps working: without it the .app grows past 10 GB.
         working-directory: ./alloomi/apps/web
