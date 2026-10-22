@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      only_job:
+        description: 'Run only this job (job id, e.g. ci-alloomi-macos-arm64). Leave empty to run every job.'
+        required: false
+        type: string
+        default: ''
 
 env:
   # CI trigger: bump to re-run on main
@@ -28,17 +33,35 @@ env:
 jobs:
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
-    # macos-15, not macos-15-xlarge. The larger runner would be the right call
-    # on paper -- 14 GB instead of 7 GB -- but melandlabs has no larger runner
-    # provisioned, so on 2026-10-13 the xlarge job failed in 4 s with zero
-    # steps and no runner assigned (#29). Until an org admin creates one, this
-    # job has to make do with the 3 vCPU / 7 GB standard runner.
+    # Runs on a self-hosted EC2 Mac (Apple silicon) -- a mac2-m2pro.metal
+    # dedicated host, 12 vCPU / 32 GB -- registered with this repo under the
+    # `macos-arm64` label.
+    #
+    # This job used to run on the GitHub-hosted `macos-15` runner: 3 vCPU and
+    # 7 GB of RAM, the smallest machine in this workflow, with swapping
+    # switched off at the host and no /swapfile to grow. That is what the
+    # Turbopack experiment in #33 ran into -- after the route table was done
+    # the build went silent for 56 minutes (the same phase takes 5 seconds on
+    # the 14 GB Intel runner) because the compile outgrew the RAM and the
+    # machine had nowhere to page to. The larger GitHub-hosted runners are not
+    # an option: `macos-15-large` / `-xlarge` / `macos-26-xlarge` are not
+    # enabled for this org, and a label probe on 2026-10-22 confirmed every
+    # one of them fails with "no runner assigned" (#29).
+    #
+    # 32 GB changes what the build can do, not just how fast it does it:
+    # Turbopack's Rust side gets room to run, and webpack's in-memory cache
+    # fits again. See the build step below.
     #
     # Cache keys carry only runner.os + runner.arch (macOS / ARM64), neither of
     # which changes here, so the pnpm store and Rust target caches survive.
-    runs-on: macos-15
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    runs-on: [self-hosted, macos-arm64]
     env:
       SKIP_SIGNING: 'false'
+      # Turbopack is back on now that the runner has the memory for it. The
+      # compile drops from ~75 min to ~38 min (measured in #33), and the
+      # 56-minute thrash it used to hit afterwards is gone with 32 GB.
+      USE_TURBOPACK: 'true'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -48,6 +71,11 @@ jobs:
         # Xcodes and the iOS/watchOS simulator runtimes, none of which this job
         # uses, and the build needs every spare gigabyte. See the script for
         # what it prunes and for the MIN_FREE_GB guard.
+        #
+        # A no-op on the self-hosted EC2 Mac: that image ships no Xcodes and
+        # no simulator runtimes, and its 200 GB root volume clears the
+        # MIN_FREE_GB guard on its own. The step stays because the guard is
+        # the thing that turns a slow build into a clear error.
         run: bash scripts/free-macos-build-disk.sh
 
       - name: Clone alloomi source code (main branch)
@@ -102,6 +130,13 @@ jobs:
         shell: bash
         run: |
           # Bundled WebRTC audio processing compiles native code with Meson.
+          #
+          # The self-hosted EC2 Mac keeps Homebrew in /opt/homebrew and does
+          # not put it on the PATH of a launchd-started service, so the Apple
+          # Silicon prefix is prepended explicitly here. It is the same
+          # prefix the GitHub-hosted Apple Silicon runners use, so this is a
+          # no-op on them.
+          export PATH="/opt/homebrew/bin:$PATH"
           brew install meson ninja pkgconf
           meson --version
           ninja --version
@@ -389,6 +424,12 @@ jobs:
         # recompiling unchanged modules. Key: unique per run so the cache stays
         # fresh (immutable entries), restore-keys picks the latest snapshot for
         # this job/arch/lockfile. Bounded by the 10GB repo cache limit (LRU).
+        #
+        # Skipped when the build runs on Turbopack: Turbopack writes no
+        # persistent build cache, so there is nothing to restore and nothing
+        # to save. The cache would just be a multi-GB download the compile
+        # never reads.
+        if: env.USE_TURBOPACK != 'true'
         id: nextjs-cache
         uses: actions/cache/restore@v4
         with:
@@ -409,19 +450,22 @@ jobs:
         # `next build` has to fit its webpack cache and the .next/standalone
         # file-tracing copy into.
         #
-        # Memory: macos-15 is a 3 vCPU / 7 GB M1 runner, the smallest in this
-        # workflow (ubuntu-22.04 and windows-2022 both get 4 vCPU / 16 GB).
-        # That is why the build step below opts back into the webpack
-        # filesystem cache -- the in-memory one does not fit in 7 GB.
+        # Memory: this job runs on the self-hosted EC2 Mac (12 vCPU / 32 GB,
+        # Apple silicon). The GitHub-hosted `macos-15` it replaced had 3 vCPU
+        # and 7 GB -- the smallest machine in this workflow -- which is why
+        # the build step below used to opt back into the webpack filesystem
+        # cache (the in-memory one did not fit) and why the Turbopack
+        # experiment in #33 stalled for 56 minutes after the route table.
         #
         # There is deliberately NO swap step here, unlike the Linux job's
-        # 8 GB /swapfile. GitHub's macOS runners boot with swapping switched
-        # off at the host -- `vm.swapusage` reports `total = 0.00M` -- and it
-        # cannot be turned back on without disabling SIP, which a hosted
-        # runner will not let you do. There is no /swapfile to grow either.
-        # `memory_pressure` (not vm_stat) is the honest read on how much is
-        # actually claimable: macOS holds most idle RAM as purgeable cache, so
-        # vm_stat's "free" looks near-zero on a perfectly healthy runner.
+        # 8 GB /swapfile. The EC2 Mac lets macOS manage its own dynamic
+        # swapfile, so `vm.swapusage` reports a real total here; the
+        # GitHub-hosted runners boot with swapping switched off at the host
+        # (`total = 0.00M`) and it cannot be turned back on without
+        # disabling SIP. `memory_pressure` (not vm_stat) is the honest read on
+        # how much is actually claimable: macOS holds most idle RAM as
+        # purgeable cache, so vm_stat's "free" looks near-zero on a
+        # perfectly healthy runner.
         run: |
           df -h "$GITHUB_WORKSPACE"
           echo "--- memory ---"
@@ -433,9 +477,7 @@ jobs:
         working-directory: ./alloomi/apps/web
         # /usr/bin/time -l reports the peak RSS of the whole build tree plus
         # the pageout/swap counters, which is the only place the memory
-        # pressure of the build shows up in the log. The runner has no swap,
-        # so a build that outgrows its RAM shows up as a climbing "Pageouts"
-        # count and a multi-minute stall instead of an error.
+        # pressure of the build shows up in the log.
         run: /usr/bin/time -l pnpm tauri:build
         env:
           # Type errors are gated in melandlabs/alloomi (.github/workflows/test.yml
@@ -445,19 +487,18 @@ jobs:
           # --max-old-space-size=12288, and the hosted runners get SIGTERMed
           # during "Running TypeScript ...". This job only has to package.
           SKIP_TYPE_CHECK: "true"
-          # 7 GB is not enough for webpack's in-memory cache: on 2026-10-13
-          # this job died with "FATAL ERROR: Reached heap limit" after 36 min,
-          # GC-thrashing at 5 GB for the last 85 s. The in-memory cache holds
-          # the whole compilation inside the V8 heap; the filesystem cache
-          # streams it to disk instead, which keeps the heap bounded and is
-          # what this job used successfully before #3837 made the in-memory
-          # cache the default. It is slower -- but with the Next.js build
-          # cache restored above it lands around 75 min for the compile.
+          # USE_TURBOPACK comes from the job env: it makes
+          # apps/web/scripts/run-tauri-build.js call `next build --turbopack`
+          # instead of the webpack build. The compile drops from ~75 min to
+          # ~38 min (measured in #33) and it needs no persistent build cache,
+          # which is why the .next/cache steps above are skipped.
           #
-          # No heap cap either. With the filesystem cache the build never got
-          # near the hardcoded --max-old-space-size, so the default is left
-          # alone rather than tuned.
-          ALLOOMI_WEBPACK_FS_CACHE: "1"
+          # Turbopack's Rust side runs in the same process as the Next.js
+          # build, so it is the side that actually wants the RAM. This is an
+          # upper bound it tries to stay under: 16 GB leaves 8 GB of the
+          # 32 GB runner for the V8 heap (build:turbo caps that at 8 GB) plus
+          # the OS and the Tauri/Rust build that follows.
+          NEXT_TURBOPACK_MEMORY_LIMIT: "16384"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
@@ -469,7 +510,7 @@ jobs:
         # Right after the build so a later verify/sign failure keeps it. Even a
         # partial cache from a failed compile is safe to save: entries are
         # content-addressed and webpack discards stale ones on load.
-        if: ${{ always() && steps.nextjs-cache.outputs.cache-hit != 'true' && hashFiles('alloomi/apps/web/.next/cache') != '' }}
+        if: ${{ always() && env.USE_TURBOPACK != 'true' && steps.nextjs-cache.outputs.cache-hit != 'true' && hashFiles('alloomi/apps/web/.next/cache') != '' }}
         uses: actions/cache/save@v4
         with:
           path: alloomi/apps/web/.next/cache
@@ -478,12 +519,13 @@ jobs:
       - name: Reclaim the webpack cache once it is saved
         # The cache lives in the Actions cache store by now, so the on-disk copy
         # is just competing with the DMG and notarize steps for the same disk.
+        if: env.USE_TURBOPACK != 'true'
         run: rm -rf alloomi/apps/web/.next/cache
 
       - name: Report runner memory and disk after the build
         # The counterpart of the report before the build: it shows what the
         # build left behind (the .next tree plus the restored Rust target) and
-        # how much of the 7 GB was still claimable afterwards. A build that
+        # how much of the 32 GB was still claimable afterwards. A build that
         # ended with almost nothing free is the one that spent its time in
         # the compressor.
         run: |
@@ -827,6 +869,7 @@ jobs:
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: macos-15-intel
     env:
       SKIP_SIGNING: 'false'
@@ -1449,6 +1492,7 @@ jobs:
           name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
   ci-alloomi-linux-amd64:
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout release repo
@@ -1842,6 +1886,7 @@ jobs:
         name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
   ci-alloomi-windows:
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: windows-2022
     steps:
     - name: Checkout release repo
@@ -2200,6 +2245,7 @@ jobs:
         name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
   ci-alloomi-linux-arm64:
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: ubuntu-22.04-arm
     steps:
     - name: Checkout release repo
