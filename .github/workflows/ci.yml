@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: ''
+        # Each job compares this input against its own literal job id.
+        # `github.job` is not populated in a job-level `if`, so comparing
+        # against it makes every job skip itself -- verified on 2026-10-23
+        # with a probe workflow (dispatching only_job=<job id> skipped every
+        # job, including the one whose id matched).
 
 env:
   # CI trigger: bump to re-run on main
@@ -54,7 +59,7 @@ jobs:
     #
     # Cache keys carry only runner.os + runner.arch (macOS / ARM64), neither of
     # which changes here, so the pnpm store and Rust target caches survive.
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-macos-arm64' }}
     runs-on: [self-hosted, macos-arm64]
     env:
       SKIP_SIGNING: 'false'
@@ -869,7 +874,7 @@ jobs:
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-macos-amd64' }}
     runs-on: macos-15-intel
     env:
       SKIP_SIGNING: 'false'
@@ -1492,7 +1497,7 @@ jobs:
           name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
   ci-alloomi-linux-amd64:
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-linux-amd64' }}
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout release repo
@@ -1886,7 +1891,7 @@ jobs:
         name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
   ci-alloomi-windows:
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-windows' }}
     runs-on: windows-2022
     steps:
     - name: Checkout release repo
@@ -2245,7 +2250,7 @@ jobs:
         name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
   ci-alloomi-linux-arm64:
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-linux-arm64' }}
     runs-on: ubuntu-22.04-arm
     steps:
     - name: Checkout release repo
