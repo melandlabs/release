@@ -375,9 +375,40 @@ jobs:
               -k "$1"
             security set-key-partition-list -S apple-tool:,apple:,codesign: \
               -s -k "$SIGNING_PASSWORD" "$1" 2>&1 | tail -2
+            # set-key-partition-list rewrites the ACL of the private key, and
+            # that leaves the keychain locked again on this machine. Every
+            # later codesign in the job then fails with "interaction is not
+            # allowed", because the key cannot be used without a user prompt.
+            # Unlock it once more; the password is the one set above.
+            security unlock-keychain -p "$SIGNING_PASSWORD" "$1"
           }
 
           echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          # The intermediate that issued our certificate has to be reachable
+          # by the trust evaluation, not just present in a job keychain.
+          #
+          # codesign builds the Developer ID chain itself and refuses to sign
+          # when it cannot close it against a trusted root ("unable to build
+          # chain to self-signed root"). The EC2 Mac image ships the classic
+          # Apple Root CA but not the G2 intermediate that issued this
+          # certificate, so the chain stops at the intermediate and every
+          # sign fails with "The specified item could not be found in the
+          # keychain". The hosted macOS runners carry the intermediate,
+          # which is why the same certificate signs there.
+          #
+          # The system keychain is where the trust evaluation looks for the
+          # intermediates of a certificate it already trusts, so that is
+          # where it goes. -n keeps sudo from hanging on a password prompt.
+          SYSTEM_KEYCHAIN=/Library/Keychains/System.keychain
+          if ! security find-certificate -a -p "$SYSTEM_KEYCHAIN" 2>/dev/null \
+            | openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null \
+            | openssl pkcs7 -print_certs -noout 2>/dev/null | grep -q "OU=G2"; then
+            curl -fsSL -o "/tmp/DeveloperIDG2CA.cer" \
+              "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
+            sudo -n security import "/tmp/DeveloperIDG2CA.cer" -A \
+              -k "$SYSTEM_KEYCHAIN"
+          fi
 
           # Keychain A: the certificate plus the Apple intermediates, so the
           # chain is complete without a network fetch.
@@ -682,6 +713,21 @@ jobs:
           # variable, so it has to carry that string.
           if [ -n "${CERT_SIGN_IDENTITY:-}" ]; then
             export SIGNING_IDENTITY="$CERT_SIGN_IDENTITY"
+          fi
+          # The signing identity lives in a keychain with a random password,
+          # and on this machine a keychain stays unlocked only for the
+          # session that unlocked it. The app signer runs as a child of this
+          # step, so unlocking here -- in the same step as the sign that
+          # needs it -- is what makes the identity visible to codesign. A
+          # locked keychain hides the identity and the sign fails with
+          # "The specified item could not be found in the keychain".
+          SIGNING_PASSWORD=$(cat "$RUNNER_TEMP/signing-password" 2>/dev/null || echo "")
+          if [ -n "$SIGNING_PASSWORD" ]; then
+            for kc in "$RUNNER_TEMP/app-signing.keychain-db" \
+                      "$HOME"/Library/Keychains/ci-signing*.keychain-db; do
+              [ -e "$kc" ] || continue
+              security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" || true
+            done
           fi
           /usr/bin/time -l pnpm tauri:build
         env:
