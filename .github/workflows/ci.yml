@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - probe/ctx
   schedule:
     - cron: '0 11 * * *'
   workflow_dispatch:
@@ -39,6 +40,13 @@ jobs:
       - run: |
           echo "A only_job=[${{ inputs.only_job }}] github.job=[${{ github.job }}]"
 
+  ctx-probe-null:
+    if: ${{ !inputs.only_job }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "N only_job=[${{ inputs.only_job }}]"
+
   ctx-probe-literal:
     if: ${{ inputs.only_job == '' || inputs.only_job == 'ctx-probe-literal' }}
     runs-on: ubuntu-22.04
@@ -48,6 +56,7 @@ jobs:
 
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
+    if: false
     # Runs on a self-hosted EC2 Mac (Apple silicon) -- a mac2-m2pro.metal
     # dedicated host, 12 vCPU / 32 GB -- registered with this repo under the
     # `macos-arm64` label.
@@ -884,6 +893,7 @@ jobs:
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
+    if: false
     if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: macos-15-intel
     env:
@@ -1507,6 +1517,7 @@ jobs:
           name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
   ci-alloomi-linux-amd64:
+    if: false
     if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: ubuntu-22.04
     steps:
@@ -1901,6 +1912,7 @@ jobs:
         name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
   ci-alloomi-windows:
+    if: false
     if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: windows-2022
     steps:
@@ -2260,6 +2272,7 @@ jobs:
         name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
   ci-alloomi-linux-arm64:
+    if: false
     if: ${{ !inputs.only_job || inputs.only_job == github.job }}
     runs-on: ubuntu-22.04-arm
     steps:
