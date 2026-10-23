@@ -475,8 +475,28 @@ jobs:
 
           MODE=""
           SIGN_ID=""
-          for attempt in $(seq 1 24); do
+          # Run codesign and report what it said. The error line is the only
+          # thing that says why a sign failed, so it must not be swallowed.
+          probe() {
+            local out
+            if out=$(codesign "$@" 2>&1); then
+              echo "ok"
+            else
+              printf '%s\n' "$out" | head -2 | tr '\n' ' ' || true
+              echo
+            fi
+          }
+          for attempt in $(seq 1 12); do
             stamp=$(date -u +%H:%M:%S)
+            # The state of the two keychains decides whether codesign can see
+            # the identity at all: a locked keychain hides it, and on this
+            # machine the unlock state does not survive from one process to
+            # the next.
+            for kc in "$KEYCHAIN_PATH" "$TEMP_KC"; do
+              echo "[$stamp] $kc: $(security show-keychain-info "$kc" 2>&1 | head -1 || true)"
+              security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" >/dev/null 2>&1 || true
+              echo "[$stamp] $kc identities: $(security find-identity -v -p codesigning "$kc" 2>&1 | tail -1 | tr -s ' ' || true)"
+            done
             security list-keychain -d user -s "$KEYCHAIN_PATH" >/dev/null
             ids=$(security find-identity -v -p codesigning 2>&1 | tail -1 | tr -s ' ')
             verify=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign 2>&1 | tail -1)
@@ -485,18 +505,18 @@ jobs:
 
             # Exactly what Tauri does when it signs from the default search
             # list: no --keychain argument, identity from the environment.
-            A=$(codesign --force -s "$APPLE_SIGNING_IDENTITY" "$PROBE" 2>&1) && A=ok || A=fail
+            A=$(probe --force -s "$APPLE_SIGNING_IDENTITY" "$PROBE")
             # Same, but with the common name of the certificate.
-            B=$(codesign --force -s "$CN" "$PROBE" 2>&1) && B=ok || B=fail
+            B=$(probe --force -s "$CN" "$PROBE")
             # Same, but with the SHA-1 of the certificate.
-            C=$(codesign --force -s "$SHA1" "$PROBE" 2>&1) && C=ok || C=fail
+            C=$(probe --force -s "$SHA1" "$PROBE")
 
             # Exactly what Tauri does when APPLE_CERTIFICATE is set: the
             # certificate lives in a keychain of its own.
             security list-keychain -d user -s "$KEYCHAIN_PATH" "$TEMP_KC" >/dev/null
-            D=$(codesign --force -s "$CN" --keychain "$TEMP_KC" "$PROBE" 2>&1) && D=ok || D=fail
-            E=$(codesign --force -s "$APPLE_SIGNING_IDENTITY" --keychain "$TEMP_KC" "$PROBE" 2>&1) && E=ok || E=fail
-            F=$(codesign --force -s "$SHA1" --keychain "$TEMP_KC" "$PROBE" 2>&1) && F=ok || F=fail
+            D=$(probe --force -s "$CN" --keychain "$TEMP_KC" "$PROBE")
+            E=$(probe --force -s "$APPLE_SIGNING_IDENTITY" --keychain "$TEMP_KC" "$PROBE")
+            F=$(probe --force -s "$SHA1" --keychain "$TEMP_KC" "$PROBE")
 
             echo "[$stamp] attempt $attempt: $ids | verify=${verify:-?} | rev=${rev:-?} | job:env=$A cn=$B sha=$C | own:cn=$D env=$E sha=$F"
 
@@ -506,7 +526,7 @@ jobs:
             if [ "$D" = "ok" ]; then MODE=temp; SIGN_ID="$CN"; break; fi
             if [ "$E" = "ok" ]; then MODE=temp; SIGN_ID="$APPLE_SIGNING_IDENTITY"; break; fi
             if [ "$F" = "ok" ]; then MODE=temp; SIGN_ID="$SHA1"; break; fi
-            sleep 15
+            sleep 10
           done
 
           if [ -z "$MODE" ]; then
