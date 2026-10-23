@@ -34,5 +34,8 @@ jobs:
       # (melandlabs/alloomi PR #4045). It is not on main yet, so without it
       # the build hangs on the SDK download; drop the pin once it merges.
       commit_sha: ${{ inputs.commit_sha || '7cc2d06d1ad067c0f9f34990c1a5436bd0c402c8' }}
-      enable_outlook_china: ${{ inputs.enable_outlook_china }}
+      # `inputs` is null on a push event, so the raw value would reach the
+      # reusable workflow as an empty string and fail the boolean check.
+      # Comparing against true always yields a real boolean.
+      enable_outlook_china: ${{ inputs.enable_outlook_china == true }}
     secrets: inherit
