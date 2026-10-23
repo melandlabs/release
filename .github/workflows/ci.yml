@@ -176,7 +176,12 @@ jobs:
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        uses: actions/cache@v3
+        # v4, not v3: v3 is deprecated (it runs on a Node 16 runtime that
+        # GitHub has retired) and it gzips the cache blob. The pnpm store is
+        # 3.3 GB of small, highly compressible files, so the zstd compression
+        # v4 uses makes the blob markedly smaller -- on the EC2 Mac runner the
+        # restore alone took 2m19s and the post-job save another 2m49s.
+        uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
           # Name the lockfile rather than globbing alloomi/**: the recursive
@@ -1278,7 +1283,12 @@ jobs:
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        uses: actions/cache@v3
+        # v4, not v3: v3 is deprecated (it runs on a Node 16 runtime that
+        # GitHub has retired) and it gzips the cache blob. The pnpm store is
+        # 3.3 GB of small, highly compressible files, so the zstd compression
+        # v4 uses makes the blob markedly smaller -- on the EC2 Mac runner the
+        # restore alone took 2m19s and the post-job save another 2m49s.
+        uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
           # Name the lockfile rather than globbing alloomi/**: the recursive
@@ -1920,7 +1930,11 @@ jobs:
         echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
     - name: Setup pnpm cache
-      uses: actions/cache@v3
+      # v4, not v3: v3 is deprecated (it runs on a Node 16 runtime that
+      # GitHub has retired) and it gzips the cache blob. The pnpm store is
+      # 3.3 GB of small, highly compressible files, so the zstd compression
+      # v4 uses makes the blob markedly smaller.
+      uses: actions/cache@v4
       with:
         path: ${{ env.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
@@ -2297,7 +2311,11 @@ jobs:
         echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
     - name: Setup pnpm cache
-      uses: actions/cache@v3
+      # v4, not v3: v3 is deprecated (it runs on a Node 16 runtime that
+      # GitHub has retired) and it gzips the cache blob. The pnpm store is
+      # 3.3 GB of small, highly compressible files, so the zstd compression
+      # v4 uses makes the blob markedly smaller.
+      uses: actions/cache@v4
       with:
         path: ${{ env.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
@@ -2669,7 +2687,11 @@ jobs:
         echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
   
     - name: Setup pnpm cache
-      uses: actions/cache@v3
+      # v4, not v3: v3 is deprecated (it runs on a Node 16 runtime that
+      # GitHub has retired) and it gzips the cache blob. The pnpm store is
+      # 3.3 GB of small, highly compressible files, so the zstd compression
+      # v4 uses makes the blob markedly smaller.
+      uses: actions/cache@v4
       with:
         path: ${{ env.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/**/pnpm-lock.yaml') }}
