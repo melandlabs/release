@@ -27,10 +27,8 @@ on:
         # against it makes every job skip itself -- verified on 2026-10-23
         # with a probe workflow (dispatching only_job=<job id> skipped every
         # job, including the one whose id matched).
-  # The same workflow, callable from another workflow. ci-macos-arm64.yml
-  # uses it to run the single macOS arm64 job from a push, because the
-  # release CI is normally driven by a workflow_dispatch event and the API
-  # token that dispatches it is not always at hand.
+  # The same workflow, callable from another workflow, so a caller can run
+  # the single macOS arm64 job without dispatching the whole matrix.
   workflow_call:
     inputs:
       commit_sha:
