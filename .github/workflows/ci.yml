@@ -1191,14 +1191,6 @@ jobs:
           name: alloomi-ci-dmg-macos${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
 
-      - name: Keep a copy of the DMG on the runner
-        run: |
-          mkdir -p "$HOME/artifacts"
-          rm -f "$HOME/artifacts"/Alloomi*.dmg
-          cp "$GITHUB_WORKSPACE"/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg \
-            "$HOME/artifacts/" || true
-          ls -la "$HOME/artifacts/"
-
       - name: Drop the app bundle before the Rust cache is saved
         # Last step on purpose: the DMG is uploaded, so nothing else needs
         # target/release/bundle. The post-job Swatinem/rust-cache save
