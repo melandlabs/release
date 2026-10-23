@@ -27,6 +27,27 @@ on:
         # against it makes every job skip itself -- verified on 2026-10-23
         # with a probe workflow (dispatching only_job=<job id> skipped every
         # job, including the one whose id matched).
+  # The same workflow, callable from another workflow. ci-macos-arm64.yml
+  # uses it to run the single macOS arm64 job from a push, because the
+  # release CI is normally driven by a workflow_dispatch event and the API
+  # token that dispatches it is not always at hand.
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: 'Specific commit SHA to build (optional)'
+        required: false
+        type: string
+        default: ''
+      enable_outlook_china:
+        description: 'Build the Outlook (21Vianet) customer variant'
+        required: false
+        type: boolean
+        default: false
+      only_job:
+        description: 'Run only this job (job id). Leave empty to run every job.'
+        required: false
+        type: string
+        default: ''
 
 env:
   # CI trigger: bump to re-run on main
@@ -93,11 +114,11 @@ jobs:
           git clone --depth 1 --single-branch --branch "${{ env.ALLOOMI_BRANCH }}" \
             https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
-          if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
+          if [ "${{ inputs.commit_sha }}" != "" ]; then
             # A shallow clone only carries the branch tip, so an explicitly
             # requested commit has to be fetched on its own.
-            git fetch --depth 1 origin "${{ github.event.inputs.commit_sha }}"
-            git checkout "${{ github.event.inputs.commit_sha }}"
+            git fetch --depth 1 origin "${{ inputs.commit_sha }}"
+            git checkout "${{ inputs.commit_sha }}"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
