@@ -1,0 +1,30 @@
+name: CI Alloomi (macOS arm64 only)
+
+# Temporary: re-runs the single macOS arm64 job so the DMG can be pulled off
+# the runner. Delete the branch when the copy has been taken.
+
+on:
+  push:
+    branches:
+      - tmp/dmg-artifact
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Specific alloomi commit SHA to build (optional)'
+        required: false
+        type: string
+        default: ''
+      enable_outlook_china:
+        description: 'Build the Outlook (21Vianet) customer variant'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  ci-alloomi-macos-arm64:
+    uses: melandlabs/release/.github/workflows/ci.yml@feat/macos-ec2-arm64-runner
+    with:
+      only_job: ci-alloomi-macos-arm64
+      commit_sha: ${{ inputs.commit_sha || '7cc2d06d1ad067c0f9f34990c1a5436bd0c402c8' }}
+      enable_outlook_china: ${{ inputs.enable_outlook_china == true }}
+    secrets: inherit
