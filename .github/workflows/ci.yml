@@ -1151,8 +1151,17 @@ jobs:
             exit 1
           fi
 
-          echo "Waiting for ticket propagation..."
-          sleep 300
+          # No sleep here on purpose. Apple's ticket does not appear the
+          # instant `notarytool wait` reports "Accepted": the submission has
+          # to be published to the notary service first, which takes a while.
+          # This step used to wait a flat 300 s for that, and the Staple DMG
+          # step below already covers it properly -- it retries `stapler
+          # staple` 20 times, 60 s apart, so it tolerates up to 20 minutes of
+          # propagation delay. The 300 s sleep was pure waiting on top of a
+          # retry loop that already waits for the same thing: on 2026-10-23
+          # the sleep ended at 13:11:30 and the very first staple attempt
+          # finished 0.4 s later, so the ticket had been ready for minutes.
+          # Dropping the sleep takes 5 minutes off every signed build.
 
       - name: Staple DMG
         if: env.SKIP_SIGNING != 'true'
@@ -1784,8 +1793,17 @@ jobs:
             exit 1
           fi
 
-          echo "Waiting for ticket propagation..."
-          sleep 300
+          # No sleep here on purpose. Apple's ticket does not appear the
+          # instant `notarytool wait` reports "Accepted": the submission has
+          # to be published to the notary service first, which takes a while.
+          # This step used to wait a flat 300 s for that, and the Staple DMG
+          # step below already covers it properly -- it retries `stapler
+          # staple` 20 times, 60 s apart, so it tolerates up to 20 minutes of
+          # propagation delay. The 300 s sleep was pure waiting on top of a
+          # retry loop that already waits for the same thing: on 2026-10-23
+          # the sleep ended at 13:11:30 and the very first staple attempt
+          # finished 0.4 s later, so the ticket had been ready for minutes.
+          # Dropping the sleep takes 5 minutes off every signed build.
 
       - name: Staple DMG
         if: env.SKIP_SIGNING != 'true'
