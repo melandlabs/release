@@ -31,6 +31,21 @@ env:
   ALLOOMI_BRANCH: 'main'
 
 jobs:
+
+  ctx-probe:
+    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "A only_job=[${{ inputs.only_job }}] github.job=[${{ github.job }}]"
+
+  ctx-probe-literal:
+    if: ${{ inputs.only_job == '' || inputs.only_job == 'ctx-probe-literal' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "B only_job=[${{ inputs.only_job }}] github.job=[${{ github.job }}]"
+
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
   ci-alloomi-macos-arm64:
     # Runs on a self-hosted EC2 Mac (Apple silicon) -- a mac2-m2pro.metal
