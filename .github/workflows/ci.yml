@@ -33,7 +33,7 @@ env:
 jobs:
 
   ctx-probe:
-    if: ${{ !inputs.only_job || inputs.only_job == github.job }}
+    if: ${{ !inputs.only_job || inputs.only_job == 'ctx-probe' }}
     runs-on: ubuntu-22.04
     steps:
       - run: |
