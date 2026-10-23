@@ -6,15 +6,33 @@ name: Upload Release Artifacts to R2
 # GitHub Release. Manual only.
 #
 # Flavors (keep them strictly apart):
-# - standard: the regular build. Publishes the full 5-file set and is the
+# - standard: the regular build. Publishes the full 5-installer set and is the
 #   only variant allowed to move latest.json / release.json.
 # - outlook-china: customer variant built with enable_outlook_china=true.
 #   Its artifact set is typically PARTIAL (e.g. only macOS aarch64 + windows)
 #   and its runs are never the "latest successful ci.yml run", so a source
-#   run ID is mandatory. It never updates the manifest: release.json is
-#   shared with standard clients (see get_platform_download_filename in
-#   alloomi apps/web/src-tauri/src/update.rs) and pointing it at a version
-#   whose Alloomi_* files don't exist yet would break standard auto-updates.
+#   run ID is mandatory. It never updates latest.json / release.json: those
+#   are shared with standard clients that predate the updater plugin, and
+#   pointing them at a version whose Alloomi_* files don't exist yet would
+#   break standard auto-updates.
+#
+# Two update mechanisms are published side by side:
+# - latest.json / release.json + installers: read by clients that predate
+#   tauri-plugin-updater (download the DMG/exe/deb and install it themselves).
+# - updater/<flavor>/stable/<target>-<arch>.json pointers + signed payloads:
+#   read by clients with tauri-plugin-updater (alloomi update.rs
+#   `manifest_endpoint`). One pointer per flavor and platform, so each flavor
+#   only ever moves its own pointers, and only for the platforms it uploaded;
+#   this is why outlook-china may move its pointers when update_latest is set.
+#   Every client requests the `stable` channel today (alloomi
+#   desktop-update.ts `createUpdateFlow`), so pointers are written there.
+#
+# Updater signing key: ci.yml signs every payload with the
+# TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets
+# (scripts/sign-updater-artifact.sh). Its public half is compiled into the
+# client (alloomi tauri.conf.json plugins.updater.pubkey); a client can only
+# install payloads signed by that key, so losing the private key strands every
+# installed client on its current version. Keep an offline backup.
 
 on:
   workflow_dispatch:
@@ -36,13 +54,16 @@ on:
           - outlook-china
         default: standard
       update_latest:
-        description: 'Point latest.json and release.json at this version after the upload. Only applies to the standard variant; outlook-china publishes always skip it.'
+        description: 'Point clients at this version after the upload: the variant''s own updater pointers, plus latest.json/release.json for standard only.'
         required: true
         type: boolean
         default: true
 
 env:
   R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  # Public base the updater pointers' URLs are built on. Must be the same
+  # host alloomi's update.rs UPDATE_BASE_URL reads the pointers from.
+  R2_PUBLIC_BASE_URL: https://pub-7f8ad94cb1444cbebae6bfd55ec52f5d.r2.dev
   # Filename convention must match alloomi's updater (apps/web/src-tauri/src/
   # update.rs get_platform_download_filename): macOS aarch64, linux aarch64,
   # windows amd64. Even though tauri's own deb is named *_arm64.deb, the
@@ -52,6 +73,9 @@ jobs:
   upload-to-r2:
     runs-on: ubuntu-22.04
     steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+
       - name: Resolve run ID and naming
         id: names
         run: |
@@ -69,9 +93,11 @@ jobs:
             fi
             echo "artifact_suffix=-outlook-china" >> $GITHUB_OUTPUT
             echo "name_prefix=Alloomi_outlook_china_" >> $GITHUB_OUTPUT
+            echo "updater_flavor=outlook_china" >> $GITHUB_OUTPUT
           else
             echo "artifact_suffix=" >> $GITHUB_OUTPUT
             echo "name_prefix=Alloomi_" >> $GITHUB_OUTPUT
+            echo "updater_flavor=alloomi" >> $GITHUB_OUTPUT
           fi
 
       - name: Find latest CI run
@@ -127,7 +153,9 @@ jobs:
           # sets are partial, so the linux amd64 deb is not guaranteed.
           VERSION="${{ inputs.version }}"
           if [ -z "$VERSION" ]; then
-            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.dmg' -o -name '*.exe' \) | head -n1)
+            # ci.yml renames DMGs to Alloomi_ci_<sha>_<arch>.dmg, which carries
+            # no version; deriving from one would publish version "ci_<sha>".
+            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.exe' -o \( -name '*.dmg' ! -name 'Alloomi_ci_*' \) \) | head -n1)
             BASE=$(basename "$ANY")
             BASE="${BASE#alloomi_}"; BASE="${BASE#Alloomi_}"
             VERSION=$(echo "$BASE" | sed -E 's/\.(deb|dmg|exe)$//; s/_(amd64|arm64|aarch64|x64)(-setup)?$//')
@@ -156,6 +184,16 @@ jobs:
           rename "alloomi-ci-dmg-macos${SUFFIX}"    '*.dmg' "${PREFIX}${VERSION}_macOS_aarch64.dmg"
           rename "alloomi-ci-dmg-x64${SUFFIX}"      '*.dmg' "${PREFIX}${VERSION}_macOS_amd64.dmg"
           rename "alloomi-ci-windows${SUFFIX}"      '*.exe' "${PREFIX}${VERSION}_windows_amd64.exe"
+          # Updater payloads and signatures (ci.yml signs the final files).
+          # Windows/Linux update from the installer itself, so only its .sig
+          # is new; macOS updates from a .app archive.
+          rename "alloomi-ci-linux${SUFFIX}"        '*.deb.sig' "${PREFIX}${VERSION}_linux_amd64.deb.sig"
+          rename "alloomi-ci-linux-arm64${SUFFIX}"  '*.deb.sig' "${PREFIX}${VERSION}_linux_aarch64.deb.sig"
+          rename "alloomi-ci-dmg-macos${SUFFIX}"    '*.app.tar.gz' "${PREFIX}${VERSION}_macOS_aarch64.app.tar.gz"
+          rename "alloomi-ci-dmg-macos${SUFFIX}"    '*.app.tar.gz.sig' "${PREFIX}${VERSION}_macOS_aarch64.app.tar.gz.sig"
+          rename "alloomi-ci-dmg-x64${SUFFIX}"      '*.app.tar.gz' "${PREFIX}${VERSION}_macOS_amd64.app.tar.gz"
+          rename "alloomi-ci-dmg-x64${SUFFIX}"      '*.app.tar.gz.sig' "${PREFIX}${VERSION}_macOS_amd64.app.tar.gz.sig"
+          rename "alloomi-ci-windows${SUFFIX}"      '*.exe.sig' "${PREFIX}${VERSION}_windows_amd64.exe.sig"
           ls -la artifacts/
 
       - name: Verify artifacts
@@ -163,15 +201,21 @@ jobs:
           set -euo pipefail
           PREFIX="${{ steps.names.outputs.name_prefix }}"
           VERSION="${{ steps.meta.outputs.version }}"
-          COUNT=$(ls artifacts | wc -l)
+          # Installers only; updater payloads and signatures are checked below.
+          COUNT=$(find artifacts -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.deb' \) | wc -l)
           if [ "${{ inputs.variant }}" = "standard" ] && [ "$COUNT" != "5" ]; then
-            echo "ERROR: expected 5 artifacts, found $COUNT"
+            echo "ERROR: expected 5 installers, found $COUNT"
             exit 1
           fi
           if [ "$COUNT" -lt 1 ]; then
             echo "ERROR: nothing to publish"
             exit 1
           fi
+          # Every installer must come with its signed updater payload, so a
+          # pointer is never written for a platform that cannot auto-update.
+          REQUIRE_ALL=""
+          if [ "${{ inputs.variant }}" = "standard" ]; then REQUIRE_ALL="--require-all"; fi
+          python3 scripts/updater_pointers.py check artifacts "$PREFIX" "$VERSION" $REQUIRE_ALL
           # Guard against publishing a build whose embedded version does not
           # match the filename version (same check as the release branch).
           # Only possible when the linux amd64 deb is part of this publish.
@@ -211,6 +255,30 @@ jobs:
           cat latest.json
           aws s3 cp latest.json "s3://${{ vars.R2_BUCKET }}/latest.json" --endpoint-url "$R2_ENDPOINT" --region auto
           aws s3 cp latest.json "s3://${{ vars.R2_BUCKET }}/release.json" --endpoint-url "$R2_ENDPOINT" --region auto
+
+      - name: Update updater pointers
+        # After the upload, so no pointer names a file that is not in the
+        # bucket yet. Each variant only writes under its own updater/<flavor>/.
+        if: inputs.update_latest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          set -euo pipefail
+          python3 scripts/updater_pointers.py write artifacts \
+            "${{ steps.names.outputs.name_prefix }}" "${{ steps.meta.outputs.version }}" \
+            "${{ steps.names.outputs.updater_flavor }}" stable "$R2_PUBLIC_BASE_URL" pointers
+          # The client downloads from the public URL, not the S3 API: make sure
+          # every payload a pointer names is actually served there.
+          for pointer in $(find pointers -name '*.json'); do
+            url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$pointer")
+            curl -fsSI --retry 3 "$url" > /dev/null || { echo "ERROR: $url is not publicly reachable"; exit 1; }
+          done
+          # no-cache: a stale pointer would keep clients on the old version.
+          aws s3 cp pointers/updater "s3://${{ vars.R2_BUCKET }}/updater" --recursive \
+            --content-type application/json --cache-control no-cache \
+            --endpoint-url "$R2_ENDPOINT" --region auto
 
       - name: Verify bucket listing
         env:

@@ -811,11 +811,26 @@ jobs:
             echo "⚠️  Failed to staple DMG after 20 attempts"
           fi
 
+      - name: Package and sign updater archive
+        # Auto-update replaces the installed .app with this archive, so it is
+        # built from the same final .app the DMG was (after the optimizer and
+        # Developer ID signing); the script checks the CDHash matches.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bash scripts/pack-macos-updater.sh \
+            ./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app \
+            ./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz
+
       - name: Upload CI DMG
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-ci-dmg-macos${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          path: |
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz.sig
 
       - name: Drop the app bundle before the Rust cache is saved
         # Last step on purpose: the DMG is uploaded, so nothing else needs
@@ -1443,11 +1458,26 @@ jobs:
             echo "⚠️  Failed to staple DMG after 20 attempts"
           fi
 
+      - name: Package and sign updater archive
+        # Auto-update replaces the installed .app with this archive, so it is
+        # built from the same final .app the DMG was (after the optimizer and
+        # Developer ID signing); the script checks the CDHash matches.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bash scripts/pack-macos-updater.sh \
+            ./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app \
+            ./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz
+
       - name: Upload CI Intel DMG
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          path: |
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz
+            ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app.tar.gz.sig
   ci-alloomi-linux-amd64:
     runs-on: ubuntu-22.04
     steps:
@@ -1836,11 +1866,22 @@ jobs:
           console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
 
+    - name: Sign deb package for auto-update
+      # Auto-update downloads and runs the deb package itself, so the signature
+      # covers the exact file uploaded below.
+      shell: bash
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      run: bash scripts/sign-updater-artifact.sh ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+
     - name: Upload CI Linux binary
       uses: actions/upload-artifact@v4
       with:
         name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-        path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+        path: |
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb.sig
   ci-alloomi-windows:
     runs-on: windows-2022
     steps:
@@ -2194,11 +2235,22 @@ jobs:
           console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
 
+    - name: Sign installer for auto-update
+      # Auto-update downloads and runs the installer itself, so the signature
+      # covers the exact file uploaded below.
+      shell: bash
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      run: bash scripts/sign-updater-artifact.sh ./alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
+
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v4
       with:
         name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-        path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
+        path: |
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe.sig
   ci-alloomi-linux-arm64:
     runs-on: ubuntu-22.04-arm
     steps:
@@ -2573,8 +2625,19 @@ jobs:
           console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
 
+    - name: Sign deb package for auto-update
+      # Auto-update downloads and runs the deb package itself, so the signature
+      # covers the exact file uploaded below.
+      shell: bash
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      run: bash scripts/sign-updater-artifact.sh ./alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+
     - name: Upload CI Linux ARM64 binary
       uses: actions/upload-artifact@v4
       with:
         name: alloomi-ci-linux-arm64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-        path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+        path: |
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+          ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb.sig
