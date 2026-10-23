@@ -391,6 +391,27 @@ jobs:
             security unlock-keychain -p "$SIGNING_PASSWORD" "$1" || true
           }
 
+          # The keychain search list has to be set in the *system* domain.
+          #
+          # The runner is a launchd system daemon and has no Aqua session, so
+          # the legacy keychain API resolves the default search list from the
+          # system preferences: `security list-keychain` in that context
+          # returns the system list plus the common list, and never the user
+          # list. `security list-keychain -d user` rewrites the user list
+          # only, which is why the identity stayed invisible to the runner's
+          # codesign ("The specified item could not be found in the
+          # keychain") while the very same keychain, named explicitly,
+          # reported one valid identity to `security find-identity`.
+          #
+          # The machine belongs to this one runner, so the system list is set
+          # along with the user list. The system keychain stays in it: it
+          # holds the Developer ID G2 intermediate the chain is built from.
+          set_search_list() {
+            security list-keychain -d user -s "$@" || true
+            sudo -n security list-keychain -d system -s \
+              /Library/Keychains/System.keychain "$@" || true
+          }
+
           echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
 
           # The intermediate that issued our certificate has to be reachable
@@ -445,6 +466,11 @@ jobs:
           import_p12 "$TEMP_KC"
           rm -f "$RUNNER_TEMP/cert.p12"
 
+          # Both keychains go into the search list before the first probe:
+          # the probe signs through the default list, which is the system
+          # list in the runner's context.
+          set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
+
           # The names codesign can be asked for: the common name of the leaf
           # (what tauri-macos-sign passes to codesign), its SHA-1 (what
           # `security find-identity` prints) and the signing identity from the
@@ -497,7 +523,7 @@ jobs:
               security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" >/dev/null 2>&1 || true
               echo "[$stamp] $kc identities: $(security find-identity -v -p codesigning "$kc" 2>&1 | tail -1 | tr -s ' ' || true)"
             done
-            security list-keychain -d user -s "$KEYCHAIN_PATH" >/dev/null
+            set_search_list "$KEYCHAIN_PATH"
             ids=$(security find-identity -v -p codesigning 2>&1 | tail -1 | tr -s ' ')
             verify=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign 2>&1 | tail -1)
             rev=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign \
@@ -513,7 +539,7 @@ jobs:
 
             # Exactly what Tauri does when APPLE_CERTIFICATE is set: the
             # certificate lives in a keychain of its own.
-            security list-keychain -d user -s "$KEYCHAIN_PATH" "$TEMP_KC" >/dev/null
+            set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
             D=$(probe --force -s "$CN" --keychain "$TEMP_KC" "$PROBE")
             E=$(probe --force -s "$APPLE_SIGNING_IDENTITY" --keychain "$TEMP_KC" "$PROBE")
             F=$(probe --force -s "$SHA1" --keychain "$TEMP_KC" "$PROBE")
@@ -531,8 +557,10 @@ jobs:
 
           if [ -z "$MODE" ]; then
             echo "::error::codesign cannot sign with the Developer ID identity on this machine"
-            echo "--- keychain search list ---"
+            echo "--- keychain search list (user) ---"
             security list-keychain -d user || true
+            echo "--- keychain search list (system) ---"
+            security list-keychain -d system || true
             echo "--- identities ---"
             security find-identity -v -p codesigning || true
             echo "--- trust evaluation of the leaf ---"
@@ -559,15 +587,15 @@ jobs:
             # The certificate stays in the job keychain, which also holds the
             # Apple intermediates. The DMG step signs the container through
             # the default search list, so it has to point at this keychain.
-            security list-keychain -d user -s "$KEYCHAIN_PATH"
             security delete-keychain "$TEMP_KC" >/dev/null 2>&1 || true
+            set_search_list "$KEYCHAIN_PATH"
           else
             # Tauri imports the .p12 into a keychain of its own and deletes it
             # when the build ends, so this probe keychain stays in the search
             # list for the DMG step that signs the container. The job keychain
             # stays in the list as well: it holds the Apple intermediates the
             # chain is built from.
-            security list-keychain -d user -s "$KEYCHAIN_PATH" "$TEMP_KC"
+            set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
           fi
           echo "Signing mode: $MODE"
           rm -f "$PROBE"
@@ -753,13 +781,14 @@ jobs:
           if [ -n "${CERT_SIGN_IDENTITY:-}" ]; then
             export SIGNING_IDENTITY="$CERT_SIGN_IDENTITY"
           fi
-          # The signing identity lives in a keychain with a random password,
-          # and on this machine a keychain stays unlocked only for the
-          # session that unlocked it. The app signer runs as a child of this
-          # step, so unlocking here -- in the same step as the sign that
-          # needs it -- is what makes the identity visible to codesign. A
-          # locked keychain hides the identity and the sign fails with
-          # "The specified item could not be found in the keychain".
+          # The signing identity lives in a keychain with a random password.
+          # The preflight step created it, imported the certificate and
+          # unlocked it; the unlock state lives in the keychain file, so it
+          # is still there in this step. Unlocking again is cheap and covers
+          # the case where the 3600s timeout expired between the steps. A
+          # locked keychain hides the identity from codesign and the sign
+          # fails with "The specified item could not be found in the
+          # keychain".
           SIGNING_PASSWORD=$(cat "$RUNNER_TEMP/signing-password" 2>/dev/null || echo "")
           if [ -n "$SIGNING_PASSWORD" ]; then
             for kc in "$RUNNER_TEMP/app-signing.keychain-db" \
