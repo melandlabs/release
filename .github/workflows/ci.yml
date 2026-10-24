@@ -822,6 +822,12 @@ jobs:
           # the OS and the Tauri/Rust build that follows.
           NEXT_TURBOPACK_MEMORY_LIMIT: "16384"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
+          # Skip the DMG that optimize-tauri-bundle.js packs at the end of the
+          # build: the "Create DMG" step below builds it again from the signed
+          # .app, so the one packed here is thrown away right after. Packing
+          # costs 2-4 min (mount, lay out the .DS_Store, compress to UDZO) and
+          # the job used to pay it twice.
+          SKIP_DMG_BEAUTIFY: "true"
           # The certificate itself is only handed to Tauri when the preflight
           # step found that the dedicated-keychain variant is the one that
           # signs on this machine; see the run block above.
@@ -1543,6 +1549,12 @@ jobs:
           # measured green on this runner; /usr/bin/time -l above reports the
           # peak RSS so the headroom is visible if it ever grows.
           MACOSX_DEPLOYMENT_TARGET: "12.0"
+          # Skip the DMG that optimize-tauri-bundle.js packs at the end of the
+          # build: the "Create DMG" step below builds it again from the signed
+          # .app, so the one packed here is thrown away right after. Packing
+          # costs 2-4 min (mount, lay out the .DS_Store, compress to UDZO) and
+          # the job used to pay it twice.
+          SKIP_DMG_BEAUTIFY: "true"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
