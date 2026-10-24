@@ -118,18 +118,23 @@ jobs:
             # resolves a full object name, so an abbreviated one is expanded
             # against the remote refs first -- "git fetch origin <abbrev>"
             # fails with "couldn't find remote ref" and costs a CI cycle.
-            sha="${{ inputs.commit_sha }}"
-            if [ "${#sha}" -lt 40 ]; then
-              matches=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
-                | awk -v want="$sha" 'index($1, want) == 1 { print $1 }')
-              count=$(printf '%s\n' "$matches" | grep -c . || true)
-              if [ "$count" != "1" ]; then
-                echo "::error::commit_sha '$sha' matches $count remote refs; pass the full 40-character object name"
-                exit 1
-              fi
-              sha="$matches"
+            want="${{ inputs.commit_sha }}"
+            resolved=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+              | awk -v want="$want" 'index($1, want) == 1 { print $1 "\t" $2 }')
+            count=$(printf '%s\n' "$resolved" | grep -c . || true)
+            if [ "$count" = "0" ]; then
+              echo "::error::commit_sha '$want' matches no remote ref; pass the full 40-character object name of a commit that is a branch or tag tip"
+              exit 1
             fi
-            git fetch --depth 1 origin "$sha"
+            if [ "${#want}" -lt 40 ] && [ "$count" != "1" ]; then
+              echo "::error::commit_sha '$want' is ambiguous ($count remote refs match); pass the full 40-character object name"
+              exit 1
+            fi
+            sha=$(printf '%s\n' "$resolved" | head -1 | cut -f1)
+            ref=$(printf '%s\n' "$resolved" | head -1 | cut -f2)
+            # Fetch the ref instead of the raw object: a remote that refuses
+            # a raw object fetch still serves the ref the commit is the tip of.
+            git fetch --depth 1 origin "$ref"
             git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
@@ -1021,18 +1026,23 @@ jobs:
             # resolves a full object name, so an abbreviated one is expanded
             # against the remote refs first -- "git fetch origin <abbrev>"
             # fails with "couldn't find remote ref" and costs a CI cycle.
-            sha="${{ inputs.commit_sha }}"
-            if [ "${#sha}" -lt 40 ]; then
-              matches=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
-                | awk -v want="$sha" 'index($1, want) == 1 { print $1 }')
-              count=$(printf '%s\n' "$matches" | grep -c . || true)
-              if [ "$count" != "1" ]; then
-                echo "::error::commit_sha '$sha' matches $count remote refs; pass the full 40-character object name"
-                exit 1
-              fi
-              sha="$matches"
+            want="${{ inputs.commit_sha }}"
+            resolved=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+              | awk -v want="$want" 'index($1, want) == 1 { print $1 "\t" $2 }')
+            count=$(printf '%s\n' "$resolved" | grep -c . || true)
+            if [ "$count" = "0" ]; then
+              echo "::error::commit_sha '$want' matches no remote ref; pass the full 40-character object name of a commit that is a branch or tag tip"
+              exit 1
             fi
-            git fetch --depth 1 origin "$sha"
+            if [ "${#want}" -lt 40 ] && [ "$count" != "1" ]; then
+              echo "::error::commit_sha '$want' is ambiguous ($count remote refs match); pass the full 40-character object name"
+              exit 1
+            fi
+            sha=$(printf '%s\n' "$resolved" | head -1 | cut -f1)
+            ref=$(printf '%s\n' "$resolved" | head -1 | cut -f2)
+            # Fetch the ref instead of the raw object: a remote that refuses
+            # a raw object fetch still serves the ref the commit is the tip of.
+            git fetch --depth 1 origin "$ref"
             git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
