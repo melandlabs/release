@@ -1,0 +1,301 @@
+name: Prepare Apple signing identity
+description: >-
+  Build the Developer ID keychains, probe codesign against every combination
+  of keychain and identity string, and export the one that works as
+  SIGNING_MODE / CERT_SIGN_IDENTITY.
+
+# The Tauri build died on the EC2 Mac runner with "error: The specified item
+# could not be found in the keychain." while signing the app bundle, while
+# the same certificate signs without trouble on the hosted macOS runners.
+#
+# codesign only accepts an identity whose certificate chain validates under
+# the codeSign policy, and it looks the identity up by name in the keychain
+# search list. So there are three things to get right and each of them can
+# fail on its own:
+#
+#   keychain shape - the certificate can sit in the job keychain (with the
+#                    Apple intermediates next to it) or in a keychain of its
+#                    own, the shape tauri-macos-sign creates when
+#                    APPLE_CERTIFICATE is set.
+#   identity name  - tauri-macos-sign signs with the common name of the
+#                    certificate, the signing identity in the workflow
+#                    environment is a different string.
+#   chain validity - the leaf needs its intermediate and a trusted root, and
+#                    the revocation check has to succeed.
+#
+# This action builds both keychain shapes, probes codesign against every
+# combination, and reports the one that works so the build step can hand
+# Tauri exactly that. The wait is not padding: the trust evaluation of the
+# Developer ID chain needs a moment on a machine that has to reach Apple's
+# revocation endpoints.
+#
+# The action writes SIGNING_MODE (job|temp) and CERT_SIGN_IDENTITY to
+# $GITHUB_ENV for the steps that sign outside of Tauri.
+
+inputs:
+  app_certificate:
+    description: The base64 .p12 of the Developer ID certificate.
+    required: true
+  app_certificate_password:
+    description: The password of the .p12.
+    required: true
+  app_signing_identity:
+    description: The signing identity string from the workflow environment.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare Apple signing identity
+      shell: bash
+      env:
+        APPLE_CERTIFICATE: ${{ inputs.app_certificate }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ inputs.app_certificate_password }}
+        APPLE_SIGNING_IDENTITY: ${{ inputs.app_signing_identity }}
+      run: |
+        set -uo pipefail
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+        TEMP_KC=$HOME/Library/Keychains/ci-signing.keychain-db
+        # Keep a copy of the imported keychains outside the runner's work
+        # directory. The runner wipes _work/_temp after the job, and the
+        # keychain is what has to be looked at when the trust evaluation
+        # misbehaves.
+        DEBUG_DIR=$HOME/signing-debug
+        SIGNING_PASSWORD=$(openssl rand -hex 16)
+        mkdir -p "$DEBUG_DIR"
+        echo "$SIGNING_PASSWORD" > "$RUNNER_TEMP/signing-password"
+        echo "$SIGNING_PASSWORD" > "$DEBUG_DIR/signing-password"
+        # Keep a copy of what this step printed on the machine: the codesign
+        # diagnostics only show up in the CI log, and the log is not
+        # reachable from the machine this step runs on.
+        exec > >(tee "$DEBUG_DIR/preflight.log") 2>&1
+        PROBE=$RUNNER_TEMP/signing-probe
+        cp /bin/echo "$PROBE"
+
+        import_p12() {
+          security import "$RUNNER_TEMP/cert.p12" -f pkcs12 -t agg \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/pkgbuild -T /usr/bin/productbuild \
+            -k "$1" || true
+          # The partition list is what lets codesign use the private key
+          # without a user prompt. The step runs under `bash -e`, and every
+          # one of these commands reports "already done" as a failure, so
+          # they must not be allowed to abort the step: the probe loop
+          # below is what decides whether the identity can sign.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$SIGNING_PASSWORD" "$1" 2>&1 | tail -2 || true
+          # Rewriting the ACL can leave the keychain locked, and a locked
+          # keychain hides the identity from codesign. Unlock it again; the
+          # command exits non-zero when the keychain is already unlocked,
+          # which is why the exit code is ignored.
+          security unlock-keychain -p "$SIGNING_PASSWORD" "$1" || true
+        }
+
+        # The keychain search list has to be set in the *system* domain.
+        #
+        # The runner is a launchd system daemon and has no Aqua session, so
+        # the legacy keychain API resolves the default search list from the
+        # system preferences: `security list-keychain` in that context
+        # returns the system list plus the common list, and never the user
+        # list. `security list-keychain -d user` rewrites the user list
+        # only, which is why the identity stayed invisible to the runner's
+        # codesign ("The specified item could not be found in the
+        # keychain") while the very same keychain, named explicitly,
+        # reported one valid identity to `security find-identity`.
+        #
+        # The machine belongs to this one runner, so the system list is set
+        # along with the user list. The system keychain stays in it: it
+        # holds the Developer ID G2 intermediate the chain is built from.
+        set_search_list() {
+          security list-keychain -d user -s "$@" || true
+          sudo -n security list-keychain -d system -s \
+            /Library/Keychains/System.keychain "$@" || true
+        }
+
+        echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+        # The intermediate that issued our certificate has to be reachable
+        # by the trust evaluation, not just present in a job keychain.
+        #
+        # codesign builds the Developer ID chain itself and refuses to sign
+        # when it cannot close it against a trusted root ("unable to build
+        # chain to self-signed root"). The EC2 Mac image ships the classic
+        # Apple Root CA but not the G2 intermediate that issued this
+        # certificate, so the chain stops at the intermediate and every
+        # sign fails with "The specified item could not be found in the
+        # keychain". The hosted macOS runners carry the intermediate,
+        # which is why the same certificate signs there.
+        #
+        # The system keychain is where the trust evaluation looks for the
+        # issuers of a certificate it already trusts, so that is where it
+        # goes. `security import` exits non-zero when the certificate is
+        # already in place, and that is not a failure for us, so the exit
+        # code is judged from the message instead of being trusted. -n
+        # keeps sudo from hanging on a password prompt.
+        G2_CERT=/tmp/DeveloperIDG2CA.cer
+        curl -fsSL -o "$G2_CERT" \
+          "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
+        IMPORT_OUTPUT=$(sudo -n security import "$G2_CERT" -A \
+          -k /Library/Keychains/System.keychain 2>&1) || true
+        echo "$IMPORT_OUTPUT"
+        case "$IMPORT_OUTPUT" in
+          *"already exists"*|*"certificate imported"*) ;;
+          *)
+            echo "::warning::the Developer ID G2 intermediate could not be installed in the system keychain"
+            ;;
+        esac
+
+        # Keychain A: the certificate plus the Apple intermediates, so the
+        # chain is complete without a network fetch.
+        security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+        security create-keychain -p "$SIGNING_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$SIGNING_PASSWORD" "$KEYCHAIN_PATH" || true
+        import_p12 "$KEYCHAIN_PATH"
+        for name in DeveloperIDG2CA AppleWWDRCAG3; do
+          curl -fsSL -o "/tmp/$name.cer" "https://www.apple.com/certificateauthority/$name.cer"
+          security import "/tmp/$name.cer" -A -k "$KEYCHAIN_PATH" || true
+        done
+
+        # Keychain B: the certificate on its own, the shape tauri-macos-sign
+        # creates when APPLE_CERTIFICATE is set.
+        security delete-keychain "$TEMP_KC" >/dev/null 2>&1 || true
+        security create-keychain -p "$SIGNING_PASSWORD" "$TEMP_KC"
+        security set-keychain-settings -t 3600 -u "$TEMP_KC"
+        security unlock-keychain -p "$SIGNING_PASSWORD" "$TEMP_KC" || true
+        import_p12 "$TEMP_KC"
+        rm -f "$RUNNER_TEMP/cert.p12"
+
+        # Both keychains go into the search list before the first probe:
+        # the probe signs through the default list, which is the system
+        # list in the runner's context.
+        set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
+
+        # The names codesign can be asked for: the common name of the leaf
+        # (what tauri-macos-sign passes to codesign), its SHA-1 (what
+        # `security find-identity` prints) and the signing identity from the
+        # workflow environment.
+        security find-certificate -c "Developer ID Application:" -p "$TEMP_KC" \
+          > "$DEBUG_DIR/leaf.pem"
+        if [ ! -s "$DEBUG_DIR/leaf.pem" ]; then
+          echo "::error::the imported .p12 holds no Developer ID certificate"
+          security dump-keychain "$TEMP_KC" 2>&1 | head -40 || true
+          exit 1
+        fi
+        CN=$(openssl x509 -in "$DEBUG_DIR/leaf.pem" -noout -subject -nameopt sep_multiline \
+          | sed -n 's/^[[:space:]]*CN=//p' | head -1)
+        SHA1=$(openssl x509 -in "$DEBUG_DIR/leaf.pem" -noout -fingerprint -sha1 \
+          | sed 's/.*=//; s/://g')
+        openssl x509 -in "$DEBUG_DIR/leaf.pem" -outform der -out "$DEBUG_DIR/leaf.der"
+        openssl x509 -inform der -in /tmp/DeveloperIDG2CA.cer -out "$DEBUG_DIR/issuer.pem"
+        echo "leaf common name: $CN"
+        echo "leaf sha-1:       $SHA1"
+        echo "--- certificates in the job keychain ---"
+        security find-certificate -a -p "$KEYCHAIN_PATH" \
+          | openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null \
+          | openssl pkcs7 -print_certs -noout 2>/dev/null || true
+        echo "--- certificates in the dedicated keychain ---"
+        security find-certificate -a -p "$TEMP_KC" \
+          | openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null \
+          | openssl pkcs7 -print_certs -noout 2>/dev/null || true
+
+        MODE=""
+        SIGN_ID=""
+        # Run codesign and report what it said. The error line is the only
+        # thing that says why a sign failed, so it must not be swallowed.
+        probe() {
+          local out
+          if out=$(codesign "$@" 2>&1); then
+            echo "ok"
+          else
+            printf '%s\n' "$out" | head -2 | tr '\n' ' ' || true
+            echo
+          fi
+        }
+        for attempt in $(seq 1 12); do
+          stamp=$(date -u +%H:%M:%S)
+          # The state of the two keychains decides whether codesign can see
+          # the identity at all: a locked keychain hides it, and on this
+          # machine the unlock state does not survive from one process to
+          # the next.
+          for kc in "$KEYCHAIN_PATH" "$TEMP_KC"; do
+            echo "[$stamp] $kc: $(security show-keychain-info "$kc" 2>&1 | head -1 || true)"
+            security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" >/dev/null 2>&1 || true
+            echo "[$stamp] $kc identities: $(security find-identity -v -p codesigning "$kc" 2>&1 | tail -1 | tr -s ' ' || true)"
+          done
+          set_search_list "$KEYCHAIN_PATH"
+          ids=$(security find-identity -v -p codesigning 2>&1 | tail -1 | tr -s ' ')
+          verify=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign 2>&1 | tail -1)
+          rev=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign \
+            -R ocsp -R require 2>&1 | tail -1)
+
+          # Exactly what Tauri does when it signs from the default search
+          # list: no --keychain argument, identity from the environment.
+          A=$(probe --force -s "$APPLE_SIGNING_IDENTITY" "$PROBE")
+          # Same, but with the common name of the certificate.
+          B=$(probe --force -s "$CN" "$PROBE")
+          # Same, but with the SHA-1 of the certificate.
+          C=$(probe --force -s "$SHA1" "$PROBE")
+
+          # Exactly what Tauri does when APPLE_CERTIFICATE is set: the
+          # certificate lives in a keychain of its own.
+          set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
+          D=$(probe --force -s "$CN" --keychain "$TEMP_KC" "$PROBE")
+          E=$(probe --force -s "$APPLE_SIGNING_IDENTITY" --keychain "$TEMP_KC" "$PROBE")
+          F=$(probe --force -s "$SHA1" --keychain "$TEMP_KC" "$PROBE")
+
+          echo "[$stamp] attempt $attempt: $ids | verify=${verify:-?} | rev=${rev:-?} | job:env=$A cn=$B sha=$C | own:cn=$D env=$E sha=$F"
+
+          if [ "$A" = "ok" ]; then MODE=job; SIGN_ID="$APPLE_SIGNING_IDENTITY"; break; fi
+          if [ "$B" = "ok" ]; then MODE=job; SIGN_ID="$CN"; break; fi
+          if [ "$C" = "ok" ]; then MODE=job; SIGN_ID="$SHA1"; break; fi
+          if [ "$D" = "ok" ]; then MODE=temp; SIGN_ID="$CN"; break; fi
+          if [ "$E" = "ok" ]; then MODE=temp; SIGN_ID="$APPLE_SIGNING_IDENTITY"; break; fi
+          if [ "$F" = "ok" ]; then MODE=temp; SIGN_ID="$SHA1"; break; fi
+          sleep 10
+        done
+
+        if [ -z "$MODE" ]; then
+          echo "::error::codesign cannot sign with the Developer ID identity on this machine"
+          echo "--- keychain search list (user) ---"
+          security list-keychain -d user || true
+          echo "--- keychain search list (system) ---"
+          security list-keychain -d system || true
+          echo "--- identities ---"
+          security find-identity -v -p codesigning || true
+          echo "--- trust evaluation of the leaf ---"
+          security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -v 2>&1 | tail -20 || true
+          echo "--- trust evaluation with a required revocation check ---"
+          security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -R ocsp -R require -v 2>&1 | tail -20 || true
+          echo "--- trust evaluation from cached revocation responses only ---"
+          security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -R offline -v 2>&1 | tail -20 || true
+          echo "--- revocation check against Apple's responder ---"
+          openssl ocsp -issuer "$DEBUG_DIR/issuer.pem" -cert "$DEBUG_DIR/leaf.pem" \
+            -url http://ocsp.apple.com/ocsp03-wwdrg6 -resp_text -noverify 2>&1 | head -20 || true
+          echo "--- dump of the dedicated keychain ---"
+          security dump-keychain "$TEMP_KC" 2>&1 | head -60 || true
+          cp "$KEYCHAIN_PATH" "$DEBUG_DIR/app-signing.keychain-db" 2>/dev/null || true
+          cp "$TEMP_KC" "$DEBUG_DIR/temp-signing.keychain-db" 2>/dev/null || true
+          exit 1
+        fi
+
+        echo "SIGNING_MODE=$MODE" >> "$GITHUB_ENV"
+        # The identity string codesign accepted, for the steps that sign
+        # outside of Tauri.
+        echo "CERT_SIGN_IDENTITY=$SIGN_ID" >> "$GITHUB_ENV"
+        if [ "$MODE" = "job" ]; then
+          # The certificate stays in the job keychain, which also holds the
+          # Apple intermediates. The DMG step signs the container through
+          # the default search list, so it has to point at this keychain.
+          security delete-keychain "$TEMP_KC" >/dev/null 2>&1 || true
+          set_search_list "$KEYCHAIN_PATH"
+        else
+          # Tauri imports the .p12 into a keychain of its own and deletes it
+          # when the build ends, so this probe keychain stays in the search
+          # list for the DMG step that signs the container. The job keychain
+          # stays in the list as well: it holds the Apple intermediates the
+          # chain is built from.
+          set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
+        fi
+        echo "Signing mode: $MODE"
+        rm -f "$PROBE"
