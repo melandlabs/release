@@ -114,9 +114,28 @@ jobs:
           cd alloomi
           if [ "${{ inputs.commit_sha }}" != "" ]; then
             # A shallow clone only carries the branch tip, so an explicitly
-            # requested commit has to be fetched on its own.
-            git fetch --depth 1 origin "${{ inputs.commit_sha }}"
-            git checkout "${{ inputs.commit_sha }}"
+            # requested commit has to be fetched on its own. The remote
+            # resolves a full object name, so an abbreviated one is expanded
+            # against the remote refs first -- "git fetch origin <abbrev>"
+            # fails with "couldn't find remote ref" and costs a CI cycle.
+            want="${{ inputs.commit_sha }}"
+            resolved=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+              | awk -v want="$want" 'index($1, want) == 1 { print $1 "\t" $2 }')
+            count=$(printf '%s\n' "$resolved" | grep -c . || true)
+            if [ "$count" = "0" ]; then
+              echo "::error::commit_sha '$want' matches no remote ref; pass the full 40-character object name of a commit that is a branch or tag tip"
+              exit 1
+            fi
+            if [ "${#want}" -lt 40 ] && [ "$count" != "1" ]; then
+              echo "::error::commit_sha '$want' is ambiguous ($count remote refs match); pass the full 40-character object name"
+              exit 1
+            fi
+            sha=$(printf '%s\n' "$resolved" | head -1 | cut -f1)
+            ref=$(printf '%s\n' "$resolved" | head -1 | cut -f2)
+            # Fetch the ref instead of the raw object: a remote that refuses
+            # a raw object fetch still serves the ref the commit is the tip of.
+            git fetch --depth 1 origin "$ref"
+            git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
@@ -325,283 +344,15 @@ jobs:
         run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
       - name: Prepare Apple signing identity
-        # The Tauri build died on the EC2 Mac runner with "error: The
-        # specified item could not be found in the keychain." while signing
-        # the app bundle, while the same certificate signs without trouble
-        # on the hosted macOS runners.
-        #
-        # codesign only accepts an identity whose certificate chain validates
-        # under the codeSign policy, and it looks the identity up by name in
-        # the keychain search list. So there are three things to get right and
-        # each of them can fail on its own:
-        #
-        #   keychain shape - the certificate can sit in the job keychain (with
-        #                    the Apple intermediates next to it) or in a
-        #                    keychain of its own, the shape tauri-macos-sign
-        #                    creates when APPLE_CERTIFICATE is set.
-        #   identity name  - tauri-macos-sign signs with the common name of
-        #                    the certificate, the signing identity in the
-        #                    workflow environment is a different string.
-        #   chain validity - the leaf needs its intermediate and a trusted
-        #                    root, and the revocation check has to succeed.
-        #
-        # This step builds both keychain shapes, probes codesign against every
-        # combination, and reports the one that works so the build step can
-        # hand Tauri exactly that. The wait is not padding: the trust
-        # evaluation of the Developer ID chain needs a moment on a machine that
-        # has to reach Apple's revocation endpoints.
+        # The signing preflight lives in a shared composite action: the
+        # hosted macOS runners and the EC2 Mac need different keychain
+        # shapes, and both macOS jobs now build on the EC2 Mac.
         if: env.SKIP_SIGNING != 'true'
-        env:
-          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
-          APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
-        run: |
-          set -uo pipefail
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          TEMP_KC=$HOME/Library/Keychains/ci-signing.keychain-db
-          # Keep a copy of the imported keychains outside the runner's work
-          # directory. The runner wipes _work/_temp after the job, and the
-          # keychain is what has to be looked at when the trust evaluation
-          # misbehaves.
-          DEBUG_DIR=$HOME/signing-debug
-          SIGNING_PASSWORD=$(openssl rand -hex 16)
-          mkdir -p "$DEBUG_DIR"
-          echo "$SIGNING_PASSWORD" > "$RUNNER_TEMP/signing-password"
-          echo "$SIGNING_PASSWORD" > "$DEBUG_DIR/signing-password"
-          # Keep a copy of what this step printed on the machine: the codesign
-          # diagnostics only show up in the CI log, and the log is not
-          # reachable from the machine this step runs on.
-          exec > >(tee "$DEBUG_DIR/preflight.log") 2>&1
-          PROBE=$RUNNER_TEMP/signing-probe
-          cp /bin/echo "$PROBE"
-
-          import_p12() {
-            security import "$RUNNER_TEMP/cert.p12" -f pkcs12 -t agg \
-              -P "$APPLE_CERTIFICATE_PASSWORD" \
-              -T /usr/bin/codesign -T /usr/bin/pkgbuild -T /usr/bin/productbuild \
-              -k "$1" || true
-            # The partition list is what lets codesign use the private key
-            # without a user prompt. The step runs under `bash -e`, and every
-            # one of these commands reports "already done" as a failure, so
-            # they must not be allowed to abort the step: the probe loop
-            # below is what decides whether the identity can sign.
-            security set-key-partition-list -S apple-tool:,apple:,codesign: \
-              -s -k "$SIGNING_PASSWORD" "$1" 2>&1 | tail -2 || true
-            # Rewriting the ACL can leave the keychain locked, and a locked
-            # keychain hides the identity from codesign. Unlock it again; the
-            # command exits non-zero when the keychain is already unlocked,
-            # which is why the exit code is ignored.
-            security unlock-keychain -p "$SIGNING_PASSWORD" "$1" || true
-          }
-
-          # The keychain search list has to be set in the *system* domain.
-          #
-          # The runner is a launchd system daemon and has no Aqua session, so
-          # the legacy keychain API resolves the default search list from the
-          # system preferences: `security list-keychain` in that context
-          # returns the system list plus the common list, and never the user
-          # list. `security list-keychain -d user` rewrites the user list
-          # only, which is why the identity stayed invisible to the runner's
-          # codesign ("The specified item could not be found in the
-          # keychain") while the very same keychain, named explicitly,
-          # reported one valid identity to `security find-identity`.
-          #
-          # The machine belongs to this one runner, so the system list is set
-          # along with the user list. The system keychain stays in it: it
-          # holds the Developer ID G2 intermediate the chain is built from.
-          set_search_list() {
-            security list-keychain -d user -s "$@" || true
-            sudo -n security list-keychain -d system -s \
-              /Library/Keychains/System.keychain "$@" || true
-          }
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-
-          # The intermediate that issued our certificate has to be reachable
-          # by the trust evaluation, not just present in a job keychain.
-          #
-          # codesign builds the Developer ID chain itself and refuses to sign
-          # when it cannot close it against a trusted root ("unable to build
-          # chain to self-signed root"). The EC2 Mac image ships the classic
-          # Apple Root CA but not the G2 intermediate that issued this
-          # certificate, so the chain stops at the intermediate and every
-          # sign fails with "The specified item could not be found in the
-          # keychain". The hosted macOS runners carry the intermediate,
-          # which is why the same certificate signs there.
-          #
-          # The system keychain is where the trust evaluation looks for the
-          # issuers of a certificate it already trusts, so that is where it
-          # goes. `security import` exits non-zero when the certificate is
-          # already in place, and that is not a failure for us, so the exit
-          # code is judged from the message instead of being trusted. -n
-          # keeps sudo from hanging on a password prompt.
-          G2_CERT=/tmp/DeveloperIDG2CA.cer
-          curl -fsSL -o "$G2_CERT" \
-            "https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer"
-          IMPORT_OUTPUT=$(sudo -n security import "$G2_CERT" -A \
-            -k /Library/Keychains/System.keychain 2>&1) || true
-          echo "$IMPORT_OUTPUT"
-          case "$IMPORT_OUTPUT" in
-            *"already exists"*|*"certificate imported"*) ;;
-            *)
-              echo "::warning::the Developer ID G2 intermediate could not be installed in the system keychain"
-              ;;
-          esac
-
-          # Keychain A: the certificate plus the Apple intermediates, so the
-          # chain is complete without a network fetch.
-          security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-          security create-keychain -p "$SIGNING_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$SIGNING_PASSWORD" "$KEYCHAIN_PATH" || true
-          import_p12 "$KEYCHAIN_PATH"
-          for name in DeveloperIDG2CA AppleWWDRCAG3; do
-            curl -fsSL -o "/tmp/$name.cer" "https://www.apple.com/certificateauthority/$name.cer"
-            security import "/tmp/$name.cer" -A -k "$KEYCHAIN_PATH" || true
-          done
-
-          # Keychain B: the certificate on its own, the shape tauri-macos-sign
-          # creates when APPLE_CERTIFICATE is set.
-          security delete-keychain "$TEMP_KC" >/dev/null 2>&1 || true
-          security create-keychain -p "$SIGNING_PASSWORD" "$TEMP_KC"
-          security set-keychain-settings -t 3600 -u "$TEMP_KC"
-          security unlock-keychain -p "$SIGNING_PASSWORD" "$TEMP_KC" || true
-          import_p12 "$TEMP_KC"
-          rm -f "$RUNNER_TEMP/cert.p12"
-
-          # Both keychains go into the search list before the first probe:
-          # the probe signs through the default list, which is the system
-          # list in the runner's context.
-          set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
-
-          # The names codesign can be asked for: the common name of the leaf
-          # (what tauri-macos-sign passes to codesign), its SHA-1 (what
-          # `security find-identity` prints) and the signing identity from the
-          # workflow environment.
-          security find-certificate -c "Developer ID Application:" -p "$TEMP_KC" \
-            > "$DEBUG_DIR/leaf.pem"
-          if [ ! -s "$DEBUG_DIR/leaf.pem" ]; then
-            echo "::error::the imported .p12 holds no Developer ID certificate"
-            security dump-keychain "$TEMP_KC" 2>&1 | head -40 || true
-            exit 1
-          fi
-          CN=$(openssl x509 -in "$DEBUG_DIR/leaf.pem" -noout -subject -nameopt sep_multiline \
-            | sed -n 's/^[[:space:]]*CN=//p' | head -1)
-          SHA1=$(openssl x509 -in "$DEBUG_DIR/leaf.pem" -noout -fingerprint -sha1 \
-            | sed 's/.*=//; s/://g')
-          openssl x509 -in "$DEBUG_DIR/leaf.pem" -outform der -out "$DEBUG_DIR/leaf.der"
-          openssl x509 -inform der -in /tmp/DeveloperIDG2CA.cer -out "$DEBUG_DIR/issuer.pem"
-          echo "leaf common name: $CN"
-          echo "leaf sha-1:       $SHA1"
-          echo "--- certificates in the job keychain ---"
-          security find-certificate -a -p "$KEYCHAIN_PATH" \
-            | openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null \
-            | openssl pkcs7 -print_certs -noout 2>/dev/null || true
-          echo "--- certificates in the dedicated keychain ---"
-          security find-certificate -a -p "$TEMP_KC" \
-            | openssl crl2pkcs7 -nocrl -certfile /dev/stdin 2>/dev/null \
-            | openssl pkcs7 -print_certs -noout 2>/dev/null || true
-
-          MODE=""
-          SIGN_ID=""
-          # Run codesign and report what it said. The error line is the only
-          # thing that says why a sign failed, so it must not be swallowed.
-          probe() {
-            local out
-            if out=$(codesign "$@" 2>&1); then
-              echo "ok"
-            else
-              printf '%s\n' "$out" | head -2 | tr '\n' ' ' || true
-              echo
-            fi
-          }
-          for attempt in $(seq 1 12); do
-            stamp=$(date -u +%H:%M:%S)
-            # The state of the two keychains decides whether codesign can see
-            # the identity at all: a locked keychain hides it, and on this
-            # machine the unlock state does not survive from one process to
-            # the next.
-            for kc in "$KEYCHAIN_PATH" "$TEMP_KC"; do
-              echo "[$stamp] $kc: $(security show-keychain-info "$kc" 2>&1 | head -1 || true)"
-              security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" >/dev/null 2>&1 || true
-              echo "[$stamp] $kc identities: $(security find-identity -v -p codesigning "$kc" 2>&1 | tail -1 | tr -s ' ' || true)"
-            done
-            set_search_list "$KEYCHAIN_PATH"
-            ids=$(security find-identity -v -p codesigning 2>&1 | tail -1 | tr -s ' ')
-            verify=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign 2>&1 | tail -1)
-            rev=$(security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign \
-              -R ocsp -R require 2>&1 | tail -1)
-
-            # Exactly what Tauri does when it signs from the default search
-            # list: no --keychain argument, identity from the environment.
-            A=$(probe --force -s "$APPLE_SIGNING_IDENTITY" "$PROBE")
-            # Same, but with the common name of the certificate.
-            B=$(probe --force -s "$CN" "$PROBE")
-            # Same, but with the SHA-1 of the certificate.
-            C=$(probe --force -s "$SHA1" "$PROBE")
-
-            # Exactly what Tauri does when APPLE_CERTIFICATE is set: the
-            # certificate lives in a keychain of its own.
-            set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
-            D=$(probe --force -s "$CN" --keychain "$TEMP_KC" "$PROBE")
-            E=$(probe --force -s "$APPLE_SIGNING_IDENTITY" --keychain "$TEMP_KC" "$PROBE")
-            F=$(probe --force -s "$SHA1" --keychain "$TEMP_KC" "$PROBE")
-
-            echo "[$stamp] attempt $attempt: $ids | verify=${verify:-?} | rev=${rev:-?} | job:env=$A cn=$B sha=$C | own:cn=$D env=$E sha=$F"
-
-            if [ "$A" = "ok" ]; then MODE=job; SIGN_ID="$APPLE_SIGNING_IDENTITY"; break; fi
-            if [ "$B" = "ok" ]; then MODE=job; SIGN_ID="$CN"; break; fi
-            if [ "$C" = "ok" ]; then MODE=job; SIGN_ID="$SHA1"; break; fi
-            if [ "$D" = "ok" ]; then MODE=temp; SIGN_ID="$CN"; break; fi
-            if [ "$E" = "ok" ]; then MODE=temp; SIGN_ID="$APPLE_SIGNING_IDENTITY"; break; fi
-            if [ "$F" = "ok" ]; then MODE=temp; SIGN_ID="$SHA1"; break; fi
-            sleep 10
-          done
-
-          if [ -z "$MODE" ]; then
-            echo "::error::codesign cannot sign with the Developer ID identity on this machine"
-            echo "--- keychain search list (user) ---"
-            security list-keychain -d user || true
-            echo "--- keychain search list (system) ---"
-            security list-keychain -d system || true
-            echo "--- identities ---"
-            security find-identity -v -p codesigning || true
-            echo "--- trust evaluation of the leaf ---"
-            security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -v 2>&1 | tail -20 || true
-            echo "--- trust evaluation with a required revocation check ---"
-            security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -R ocsp -R require -v 2>&1 | tail -20 || true
-            echo "--- trust evaluation from cached revocation responses only ---"
-            security verify-cert -c "$DEBUG_DIR/leaf.der" -p codeSign -R offline -v 2>&1 | tail -20 || true
-            echo "--- revocation check against Apple's responder ---"
-            openssl ocsp -issuer "$DEBUG_DIR/issuer.pem" -cert "$DEBUG_DIR/leaf.pem" \
-              -url http://ocsp.apple.com/ocsp03-wwdrg6 -resp_text -noverify 2>&1 | head -20 || true
-            echo "--- dump of the dedicated keychain ---"
-            security dump-keychain "$TEMP_KC" 2>&1 | head -60 || true
-            cp "$KEYCHAIN_PATH" "$DEBUG_DIR/app-signing.keychain-db" 2>/dev/null || true
-            cp "$TEMP_KC" "$DEBUG_DIR/temp-signing.keychain-db" 2>/dev/null || true
-            exit 1
-          fi
-
-          echo "SIGNING_MODE=$MODE" >> "$GITHUB_ENV"
-          # The identity string codesign accepted, for the steps that sign
-          # outside of Tauri.
-          echo "CERT_SIGN_IDENTITY=$SIGN_ID" >> "$GITHUB_ENV"
-          if [ "$MODE" = "job" ]; then
-            # The certificate stays in the job keychain, which also holds the
-            # Apple intermediates. The DMG step signs the container through
-            # the default search list, so it has to point at this keychain.
-            security delete-keychain "$TEMP_KC" >/dev/null 2>&1 || true
-            set_search_list "$KEYCHAIN_PATH"
-          else
-            # Tauri imports the .p12 into a keychain of its own and deletes it
-            # when the build ends, so this probe keychain stays in the search
-            # list for the DMG step that signs the container. The job keychain
-            # stays in the list as well: it holds the Apple intermediates the
-            # chain is built from.
-            set_search_list "$KEYCHAIN_PATH" "$TEMP_KC"
-          fi
-          echo "Signing mode: $MODE"
-          rm -f "$PROBE"
+        uses: ./.github/actions/apple-signing
+        with:
+          app_certificate: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          app_certificate_password: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          app_signing_identity: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
 
       - name: Patch tauri.conf.* to skip bundler on macOS (Apple Silicon)
         # Tauri's own DMG bundler is redundant work on this job. The DMG we
@@ -822,6 +573,12 @@ jobs:
           # the OS and the Tauri/Rust build that follows.
           NEXT_TURBOPACK_MEMORY_LIMIT: "16384"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
+          # Skip the DMG that optimize-tauri-bundle.js packs at the end of the
+          # build: the "Create DMG" step below builds it again from the signed
+          # .app, so the one packed here is thrown away right after. Packing
+          # costs 2-4 min (mount, lay out the .DS_Store, compress to UDZO) and
+          # the job used to pay it twice.
+          SKIP_DMG_BEAUTIFY: "true"
           # The certificate itself is only handed to Tauri when the preflight
           # step found that the dedicated-keychain variant is the one that
           # signs on this machine; see the run block above.
@@ -1215,33 +972,78 @@ jobs:
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
-    # Runs on the GitHub-hosted macos-15-intel runner: 4 vCPU / 14 GB.
+    # Builds the Intel bundle on the same self-hosted EC2 Mac as the arm64
+    # job, by cross-compiling for x86_64-apple-darwin. Rosetta 2 runs the
+    # x86_64 Node (and with it the x86_64 native modules and the x86_64
+    # Turbopack binary); the Rust side cross-compiles natively.
     #
-    # This job used to build with webpack, like the arm64 job did before
-    # #35. It can afford Turbopack where the old arm64 runner could not: the
-    # 7 GB macos-15 that #33 ran on thrashed for 56 minutes after the route
-    # table (the compile outgrew the RAM and the machine had nowhere to page
-    # to), while the same build on this 14 GB runner finished that phase in
-    # 5 seconds -- run 39597031213 (2026-10-21) built and notarized the
-    # Intel DMG on Turbopack and went green.
+    # This job used to run on the GitHub-hosted macos-15-intel runner
+    # (4 vCPU / 14 GB) and took 94 minutes: the Turbopack compile alone ran
+    # 14-36 minutes and the Rust build another 11-18. The same build on the
+    # EC2 Mac (12 vCPU / 32 GB) compiles in 94 seconds and links the Rust in
+    # 1m23s, so the Intel job drops to roughly the length of the arm64 one.
+    #
+    # The two jobs share the runner, so they run one after the other instead
+    # of in parallel: ~23 min + ~30 min beats 23 min + 94 min.
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-macos-amd64' }}
-    runs-on: macos-15-intel
+    runs-on: [self-hosted, macos-arm64]
     env:
       SKIP_SIGNING: 'false'
       # Turbopack for the Next.js production build -- see the build step below.
       USE_TURBOPACK: 'true'
+      # The Rust target this job builds for. Cargo nests the triple under
+      # the target directory, so the .app lands in
+      # src-tauri/target/x86_64-apple-darwin/release/bundle instead of
+      # src-tauri/target/release/bundle. The alloomi build scripts read the
+      # same variable (apps/web/scripts/tauri-target.mjs) to find it, and
+      # the steps below use TAURI_BUNDLE_DIR to find it from the workflow.
+      ALLOOMI_TAURI_TARGET: x86_64-apple-darwin
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
 
+      - name: Free runner disk space
+        # Before the clone and the installs. A no-op on the self-hosted EC2
+        # Mac -- that image ships no Xcodes and no simulator runtimes, and
+        # its 200 GB root volume clears the MIN_FREE_GB guard on its own --
+        # but the guard is the thing that turns a slow build into a clear
+        # error, and this job now runs on the same machine as the arm64 one.
+        run: bash scripts/free-macos-build-disk.sh
+
       - name: Clone alloomi source code (main branch)
         run: |
-          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          # --depth 1, like the arm64 job: nothing in the build reads
+          # history, and a full clone costs ~800 MB of .git -- disk the
+          # .next/standalone copy and the Rust target need more. It also
+          # keeps hashFiles('alloomi/**/pnpm-lock.yaml') under its 120 s
+          # ceiling, since that glob walks .git too.
+          git clone --depth 1 --single-branch --branch "${{ env.ALLOOMI_BRANCH }}" \
+            https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
-          if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
-            git checkout ${{ github.event.inputs.commit_sha }}
-          else
-            git checkout ${{ env.ALLOOMI_BRANCH }}
+          if [ "${{ inputs.commit_sha }}" != "" ]; then
+            # A shallow clone only carries the branch tip, so an explicitly
+            # requested commit has to be fetched on its own. The remote
+            # resolves a full object name, so an abbreviated one is expanded
+            # against the remote refs first -- "git fetch origin <abbrev>"
+            # fails with "couldn't find remote ref" and costs a CI cycle.
+            want="${{ inputs.commit_sha }}"
+            resolved=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+              | awk -v want="$want" 'index($1, want) == 1 { print $1 "\t" $2 }')
+            count=$(printf '%s\n' "$resolved" | grep -c . || true)
+            if [ "$count" = "0" ]; then
+              echo "::error::commit_sha '$want' matches no remote ref; pass the full 40-character object name of a commit that is a branch or tag tip"
+              exit 1
+            fi
+            if [ "${#want}" -lt 40 ] && [ "$count" != "1" ]; then
+              echo "::error::commit_sha '$want' is ambiguous ($count remote refs match); pass the full 40-character object name"
+              exit 1
+            fi
+            sha=$(printf '%s\n' "$resolved" | head -1 | cut -f1)
+            ref=$(printf '%s\n' "$resolved" | head -1 | cut -f2)
+            # Fetch the ref instead of the raw object: a remote that refuses
+            # a raw object fetch still serves the ref the commit is the tip of.
+            git fetch --depth 1 origin "$ref"
+            git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
@@ -1249,10 +1051,39 @@ jobs:
         id: nightly_version
         run: bash scripts/bump-nightly-version.sh alloomi
 
+      - name: Install Rosetta 2
+        # The x86_64 Node that this job needs is an x86_64 Mach-O binary,
+        # and an x86_64 binary only runs on Apple silicon through Rosetta 2.
+        # The EC2 Mac image does not ship it.
+        #
+        # Installing it is a one-off: the check below short-circuits once it
+        # is there, so every later run takes the fast path. The runner user
+        # has passwordless sudo -- the signing preflight relies on it for
+        # the system keychain.
+        run: |
+          set -e
+          if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 is already installed"
+          else
+            echo "Rosetta 2 is missing -- installing it"
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          # The proof that it works: an x86_64 slice of a universal binary
+          # runs. Without Rosetta this fails with "Bad CPU type in
+          # executable".
+          /usr/bin/arch -x86_64 /usr/bin/true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          # The x86_64 Node. The job builds an Intel app on an Apple silicon
+          # machine, so every native module in node_modules has to be the
+          # darwin-x64 one -- and pnpm picks those because the Node that
+          # runs it reports process.arch = x64. Rosetta 2 translates the
+          # binary; the arm64 Node in the same PATH would load arm64
+          # modules and the packaged app would fail on an Intel Mac.
+          architecture: 'x64'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -1279,6 +1110,7 @@ jobs:
         shell: bash
         run: |
           # Bundled WebRTC audio processing compiles native code with Meson.
+          export PATH="/opt/homebrew/bin:$PATH"
           brew install meson ninja pkgconf
           meson --version
           ninja --version
@@ -1286,8 +1118,24 @@ jobs:
 
       - name: Install Rust targets
         run: |
+          # The cross target this job compiles for. The host toolchain stays
+          # arm64, so the build scripts and the proc macros are compiled for
+          # the host and run natively -- only the artifacts are x86_64.
           rustup target add aarch64-apple-darwin
           rustup target add x86_64-apple-darwin
+
+      - name: Resolve the Tauri bundle directory
+        run: |
+          # Cargo nests the target triple under the target directory
+          # whenever --target is passed, so the bundle of a cross build
+          # lives one level deeper than a native one. Every step below
+          # reads this variable instead of hardcoding the path.
+          if [ -n "${ALLOOMI_TAURI_TARGET:-}" ]; then
+            echo "TAURI_BUNDLE_DIR=alloomi/apps/web/src-tauri/target/${ALLOOMI_TAURI_TARGET}/release/bundle" >> "$GITHUB_ENV"
+          else
+            echo "TAURI_BUNDLE_DIR=alloomi/apps/web/src-tauri/target/release/bundle" >> "$GITHUB_ENV"
+          fi
+          echo "TAURI_BUNDLE_DIR=$TAURI_BUNDLE_DIR"
 
       - name: Get pnpm store directory
         run: |
@@ -1307,12 +1155,28 @@ jobs:
           # blew the 120 s hashFiles ceiling on 2026-10-10 and 2026-10-11 --
           # the job died in template evaluation, before any build step ran.
           # alloomi carries exactly one pnpm-lock.yaml, at its root.
+          #
+          # The same key as the arm64 job's: the store is content-addressed
+          # and the two jobs install the same lockfile, so they can share
+          # one blob. The arch-specific packages (the SWC/Turbopack binary,
+          # sharp, chromium) are the exception -- the first job to save owns
+          # the entry, so the other one re-downloads its own variants on
+          # every run. That is a couple of hundred megabytes, cheaper than
+          # a second 3.3 GB blob and a second multi-minute save.
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('alloomi/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         working-directory: ./alloomi
+        env:
+          # The x86_64 variants of the platform-specific optional
+          # dependencies (the Next.js SWC/Turbopack binary, sharp,
+          # @sparticuz/chromium). The x64 Node already reports
+          # process.arch = x64; this makes the intent explicit and keeps
+          # the resolution correct if the install ever runs under a
+          # different Node.
+          npm_config_arch: x64
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Copy docxodus WASM runtime
@@ -1438,28 +1302,16 @@ jobs:
         working-directory: ./alloomi/apps/web
         run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
-      - name: Import Apple Certificate and Intermediate Certificates
+      - name: Prepare Apple signing identity
+        # The signing preflight lives in a shared composite action: the
+        # hosted macOS runners and the EC2 Mac need different keychain
+        # shapes, and this job now builds on the EC2 Mac.
         if: env.SKIP_SIGNING != 'true'
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          security create-keychain -p "" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "" $KEYCHAIN_PATH
-
-          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
-          security import cert.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
-          rm cert.p12
-
-          curl -s -o /tmp/AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
-          curl -s -o /tmp/DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
-          security import /tmp/AppleWWDRCAG3.cer -A -k $KEYCHAIN_PATH
-          security import /tmp/DeveloperIDG2CA.cer -A -k $KEYCHAIN_PATH
-
-          security list-keychain -d user -s $KEYCHAIN_PATH
+        uses: ./.github/actions/apple-signing
+        with:
+          app_certificate: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          app_certificate_password: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          app_signing_identity: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
 
       - name: Patch tauri.conf.* to skip bundler on macOS (Intel)
         working-directory: ./alloomi/apps/web
@@ -1489,8 +1341,28 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ./alloomi/apps/web/src-tauri -> target
-          prefix-key: ${{ runner.os }}-${{ runner.arch }}
+          # Its own prefix: the arm64 job caches the aarch64 artifacts of the
+          # same target/ directory, and a shared key would mean one of the
+          # two jobs could never save (GitHub cache entries are immutable) --
+          # whichever ran first would own the entry forever.
+          prefix-key: ${{ runner.os }}-${{ runner.arch }}-x86_64
           if-no-files-found: warn
+
+      - name: Drop the previous run's app bundle from the Rust cache
+        # The counterpart of the arm64 job's step of the same name. The
+        # cross build nests its bundle one level deeper, under the target
+        # triple, so the path is different -- but the reasoning is the same:
+        # Swatinem/rust-cache archives all of target/, so after a successful
+        # run it also carries the signed .app and the notarized DMG that
+        # build produced. cargo never reads any of it, but it is gigabytes
+        # of dead weight restored onto the runner right when the .next/
+        # standalone copy needs the same disk.
+        run: |
+          BUNDLE="$TAURI_BUNDLE_DIR"
+          if [ -d "$BUNDLE" ]; then
+            du -sh "$BUNDLE"
+            rm -rf "$BUNDLE"
+          fi
 
       - name: Restore meeting media SDK cache
         id: meeting-media-cache
@@ -1520,7 +1392,48 @@ jobs:
         # /usr/bin/time -l reports the peak RSS of the whole build tree plus
         # the pageout/swap counters -- the only place the memory pressure of
         # the build shows up in the log.
-        run: /usr/bin/time -l pnpm tauri:build
+        run: |
+          # Keep the build output on the machine: the codesign diagnostics
+          # only show up in the CI log, and the log is not reachable from the
+          # machine this step runs on.
+          mkdir -p "$HOME/signing-debug"
+          exec > >(tee "$HOME/signing-debug/build.log") 2>&1
+          # Tauri picks its signing setup from the environment: with
+          # APPLE_CERTIFICATE set it imports the .p12 into a keychain of its
+          # own, without it Tauri signs with the identity from the default
+          # keychain search list. The preflight step above probed both and
+          # reported the one that can sign on this machine, so APPLE_CERTIFICATE
+          # is only exported for the variant Tauri has to use. An empty
+          # APPLE_CERTIFICATE would not do: tauri-macos-sign only looks at
+          # whether the variable is set, not at whether it carries a
+          # certificate.
+          if [ "${SIGNING_MODE:-job}" = "temp" ]; then
+            export APPLE_CERTIFICATE="$APPLE_CERTIFICATE_VALUE"
+            export APPLE_CERTIFICATE_PASSWORD="$APPLE_CERTIFICATE_PASSWORD_VALUE"
+          fi
+          # The preflight step found the identity string codesign accepts on
+          # this machine. Tauri signs with the SIGNING_IDENTITY environment
+          # variable, so it has to carry that string.
+          if [ -n "${CERT_SIGN_IDENTITY:-}" ]; then
+            export SIGNING_IDENTITY="$CERT_SIGN_IDENTITY"
+          fi
+          # The signing identity lives in a keychain with a random password.
+          # The preflight step created it, imported the certificate and
+          # unlocked it; the unlock state lives in the keychain file, so it
+          # is still there in this step. Unlocking again is cheap and covers
+          # the case where the 3600s timeout expired between the steps. A
+          # locked keychain hides the identity from codesign and the sign
+          # fails with "The specified item could not be found in the
+          # keychain".
+          SIGNING_PASSWORD=$(cat "$RUNNER_TEMP/signing-password" 2>/dev/null || echo "")
+          if [ -n "$SIGNING_PASSWORD" ]; then
+            for kc in "$RUNNER_TEMP/app-signing.keychain-db" \
+                      "$HOME"/Library/Keychains/ci-signing*.keychain-db; do
+              [ -e "$kc" ] || continue
+              security unlock-keychain -p "$SIGNING_PASSWORD" "$kc" || true
+            done
+          fi
+          /usr/bin/time -l pnpm tauri:build
         env:
           SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
           # Turbopack, same as the arm64 job. It compiles in Rust with its
@@ -1531,10 +1444,9 @@ jobs:
           #
           # The thrash that made #33 fail was the arm64 job's 7 GB
           # macos-15: the compile outgrew the RAM and the machine had
-          # nowhere to page to. This runner is macos-15-intel with 14 GB, and
-          # the same build finished the route-table-to-standalone phase in
-          # 5 seconds there (run 39597031213, 2026-10-21: the Intel DMG
-          # built, notarized and uploaded green on Turbopack).
+          # nowhere to page to. This job used to run on macos-15-intel with
+          # 14 GB; it now runs on the EC2 Mac (12 vCPU / 32 GB), where the
+          # same compile takes 94 seconds.
           #
           # NEXT_TURBOPACK_MEMORY_LIMIT is deliberately NOT set here. It caps
           # Turbopack's Rust side, and a cap that is too low turns the compile
@@ -1543,8 +1455,29 @@ jobs:
           # measured green on this runner; /usr/bin/time -l above reports the
           # peak RSS so the headroom is visible if it ever grows.
           MACOSX_DEPLOYMENT_TARGET: "12.0"
-          APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
-          APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
+          # Skip the DMG that optimize-tauri-bundle.js packs at the end of the
+          # build: the "Create DMG" step below builds it again from the signed
+          # .app, so the one packed here is thrown away right after. Packing
+          # costs 2-4 min (mount, lay out the .DS_Store, compress to UDZO) and
+          # the job used to pay it twice.
+          SKIP_DMG_BEAUTIFY: "true"
+          # The cross target. `tauri build` gets it as --target (see
+          # apps/web/scripts/tauri-build-region.mjs, which reads
+          # ALLOOMI_TAURI_TARGET), and cargo gets it as CARGO_BUILD_TARGET so
+          # the private meeting media worker is built for x86_64 as well --
+          # that worker is a separate cargo project, so it does not inherit
+          # the Tauri build's --target.
+          #
+          # Without the second one the meeting media runtime would be an
+          # arm64 binary shipped inside an Intel app: it would load on an
+          # Apple silicon Mac (which has Rosetta) and fail on every Intel
+          # Mac, where the app is supposed to run.
+          CARGO_BUILD_TARGET: x86_64-apple-darwin
+          # The certificate itself is only handed to Tauri when the preflight
+          # step found that the dedicated-keychain variant is the one that
+          # signs on this machine; see the run block above.
+          APPLE_CERTIFICATE_VALUE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
+          APPLE_CERTIFICATE_PASSWORD_VALUE: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
           SKIP_SIGNING: 'false'
@@ -1603,7 +1536,7 @@ jobs:
         # fine but cannot record.
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
         run: |
-          RUNTIME="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app/Contents/Resources/resources/meeting-media"
+          RUNTIME="$TAURI_BUNDLE_DIR/macos/Alloomi.app/Contents/Resources/resources/meeting-media"
           test -x "$RUNTIME/bin/alloomi-meeting-media" && test -f "$RUNTIME/manifest.json"
           codesign --verify --strict --verbose=2 "$RUNTIME/bin/alloomi-meeting-media"
 
@@ -1682,7 +1615,7 @@ jobs:
         if: env.SKIP_SIGNING != 'true'
         run: |
           set -e
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          APP_BUNDLE="$TAURI_BUNDLE_DIR/macos/Alloomi.app"
           codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
           echo "✅ App bundle signatures verified"
 
@@ -1694,8 +1627,8 @@ jobs:
         run: |
           set -e
 
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
-          DMG_DIR="./alloomi/apps/web/src-tauri/target/release/bundle/dmg"
+          APP_BUNDLE="$TAURI_BUNDLE_DIR/macos/Alloomi.app"
+          DMG_DIR="$TAURI_BUNDLE_DIR/dmg"
           SRC_TAURI="./alloomi/apps/web/src-tauri"
           mkdir -p "$DMG_DIR"
 
@@ -1762,7 +1695,7 @@ jobs:
         if: env.SKIP_SIGNING != 'true'
         timeout-minutes: 60
         run: |
-          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./$TAURI_BUNDLE_DIR/dmg/Alloomi*.dmg)
           echo "Notarizing: $DMG_PATH"
 
           codesign -dv "$DMG_PATH" 2>&1 | head -5
@@ -1849,7 +1782,7 @@ jobs:
         if: env.SKIP_SIGNING != 'true'
         continue-on-error: true
         run: |
-          DMG_PATH=$(ls ./alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg)
+          DMG_PATH=$(ls ./$TAURI_BUNDLE_DIR/dmg/Alloomi*.dmg)
           echo "Stapling: $DMG_PATH"
 
           STAPLED=false
@@ -1880,7 +1813,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
-          path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          path: ${{ github.workspace }}/${{ env.TAURI_BUNDLE_DIR }}/dmg/Alloomi*.dmg
+
+      - name: Drop the app bundle before the Rust cache is saved
+        # Last step on purpose: the DMG is uploaded, so nothing else needs
+        # the bundle. The post-job Swatinem/rust-cache save archives all of
+        # target/, and leaving the .app and DMG in place is what made the
+        # next run restore gigabytes of a stale artifact -- see "Drop the
+        # previous run's app bundle from the Rust cache".
+        run: rm -rf "$TAURI_BUNDLE_DIR"
+
   ci-alloomi-linux-amd64:
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-linux-amd64' }}
     runs-on: ubuntu-22.04
