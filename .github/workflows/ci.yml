@@ -114,9 +114,23 @@ jobs:
           cd alloomi
           if [ "${{ inputs.commit_sha }}" != "" ]; then
             # A shallow clone only carries the branch tip, so an explicitly
-            # requested commit has to be fetched on its own.
-            git fetch --depth 1 origin "${{ inputs.commit_sha }}"
-            git checkout "${{ inputs.commit_sha }}"
+            # requested commit has to be fetched on its own. The remote
+            # resolves a full object name, so an abbreviated one is expanded
+            # against the remote refs first -- "git fetch origin <abbrev>"
+            # fails with "couldn't find remote ref" and costs a CI cycle.
+            sha="${{ inputs.commit_sha }}"
+            if [ "${#sha}" -lt 40 ]; then
+              matches=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+                | awk -v want="$sha" 'index($1, want) == 1 { print $1 }')
+              count=$(printf '%s\n' "$matches" | grep -c . || true)
+              if [ "$count" != "1" ]; then
+                echo "::error::commit_sha '$sha' matches $count remote refs; pass the full 40-character object name"
+                exit 1
+              fi
+              sha="$matches"
+            fi
+            git fetch --depth 1 origin "$sha"
+            git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
@@ -1003,9 +1017,23 @@ jobs:
           cd alloomi
           if [ "${{ inputs.commit_sha }}" != "" ]; then
             # A shallow clone only carries the branch tip, so an explicitly
-            # requested commit has to be fetched on its own.
-            git fetch --depth 1 origin "${{ inputs.commit_sha }}"
-            git checkout "${{ inputs.commit_sha }}"
+            # requested commit has to be fetched on its own. The remote
+            # resolves a full object name, so an abbreviated one is expanded
+            # against the remote refs first -- "git fetch origin <abbrev>"
+            # fails with "couldn't find remote ref" and costs a CI cycle.
+            sha="${{ inputs.commit_sha }}"
+            if [ "${#sha}" -lt 40 ]; then
+              matches=$(git ls-remote origin "refs/heads/*" "refs/tags/*" \
+                | awk -v want="$sha" 'index($1, want) == 1 { print $1 }')
+              count=$(printf '%s\n' "$matches" | grep -c . || true)
+              if [ "$count" != "1" ]; then
+                echo "::error::commit_sha '$sha' matches $count remote refs; pass the full 40-character object name"
+                exit 1
+              fi
+              sha="$matches"
+            fi
+            git fetch --depth 1 origin "$sha"
+            git checkout "$sha"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
