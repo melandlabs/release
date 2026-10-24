@@ -2,6 +2,9 @@ name: Probe EC2 Mac (x86_64 cross-build feasibility)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ci/probe-ec2-mac-x64
 
 jobs:
   probe:
