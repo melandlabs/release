@@ -998,6 +998,28 @@ jobs:
         id: nightly_version
         run: bash scripts/bump-nightly-version.sh alloomi
 
+      - name: Install Rosetta 2
+        # The x86_64 Node that this job needs is an x86_64 Mach-O binary,
+        # and an x86_64 binary only runs on Apple silicon through Rosetta 2.
+        # The EC2 Mac image does not ship it.
+        #
+        # Installing it is a one-off: the check below short-circuits once it
+        # is there, so every later run takes the fast path. The runner user
+        # has passwordless sudo -- the signing preflight relies on it for
+        # the system keychain.
+        run: |
+          set -e
+          if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 is already installed"
+          else
+            echo "Rosetta 2 is missing -- installing it"
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          # The proof that it works: an x86_64 slice of a universal binary
+          # runs. Without Rosetta this fails with "Bad CPU type in
+          # executable".
+          /usr/bin/arch -x86_64 /usr/bin/true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
