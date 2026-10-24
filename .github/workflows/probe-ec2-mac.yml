@@ -1,0 +1,75 @@
+name: Probe EC2 Mac (x86_64 cross-build feasibility)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/probe-ec2-mac-x64
+
+jobs:
+  probe:
+    # The self-hosted EC2 Mac. It currently builds the arm64 bundle; this
+    # workflow only reads facts off the machine, it builds nothing.
+    runs-on: [self-hosted, macos-arm64]
+    steps:
+      - name: Install Rosetta 2
+        # The Intel bundle is going to be cross-compiled here, which needs
+        # the x86_64 Node (and with it the x86_64 native modules and the
+        # x86_64 Turbopack binary). An x86_64 Mach-O binary only runs on
+        # Apple silicon through Rosetta 2, and the EC2 Mac image does not
+        # ship it.
+        #
+        # Installing it on the machine is a one-off: the step below is
+        # idempotent, so every later run just takes the fast path. The
+        # runner user has passwordless sudo (the signing preflight relies
+        # on it for the system keychain).
+        run: |
+          set -e
+          if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 is already installed"
+          else
+            echo "Rosetta 2 is missing -- installing it"
+            sudo softwareupdate --install-rosetta --agree-to-license --verbose
+          fi
+          # The proof that it works: an x86_64 slice of a universal binary
+          # runs. Without Rosetta this fails with "Bad CPU type in
+          # executable".
+          /usr/bin/arch -x86_64 /usr/bin/true
+          echo "arch -x86_64 exit=$?"
+          pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto | head -5
+          ls /Library/Apple/usr/libexec/oah | head -3
+
+      - name: Probe
+        run: |
+          set +e
+          echo "===== machine ====="
+          sw_vers
+          uname -m
+          sysctl -n hw.ncpu hw.memsize 2>/dev/null
+          echo "--- brew ---"
+          ls -d /opt/homebrew /usr/local 2>/dev/null
+          echo "--- disk ---"
+          df -h / "$HOME" "$GITHUB_WORKSPACE" 2>/dev/null
+
+          echo "===== rosetta ====="
+          # A translated process reports a non-zero "translated" flag.
+          /usr/bin/arch -x86_64 /usr/bin/true 2>&1
+          echo "arch -x86_64 exit=$?"
+          sysctl -n sysctl.proc_translated 2>/dev/null
+          pgrep -l oahd 2>/dev/null
+          pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto 2>&1 | head -5
+          ls /Library/Apple/usr/libexec/oah 2>&1 | head -3
+
+          echo "===== node ====="
+          node -p "process.version + ' ' + process.arch" 2>&1
+          echo "--- npm registry: x64 claude sdk ---"
+          npm view @anthropic-ai/claude-agent-sdk-darwin-x64 version 2>&1 | head -3
+          npm view @anthropic-ai/claude-agent-sdk-darwin-arm64 version 2>&1 | head -3
+
+          echo "===== rust ====="
+          rustup target list --installed 2>&1
+          rustup target list 2>&1 | grep apple-darwin
+
+          echo "===== tools ====="
+          which lipo codesign notarytool pkgutil xattr hdiutil 2>&1
+          xcodebuild -version 2>&1 | head -3
