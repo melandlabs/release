@@ -983,14 +983,29 @@ jobs:
       - name: Checkout release repo
         uses: actions/checkout@v4
 
+      - name: Free runner disk space
+        # Before the clone and the installs. A no-op on the self-hosted EC2
+        # Mac -- that image ships no Xcodes and no simulator runtimes, and
+        # its 200 GB root volume clears the MIN_FREE_GB guard on its own --
+        # but the guard is the thing that turns a slow build into a clear
+        # error, and this job now runs on the same machine as the arm64 one.
+        run: bash scripts/free-macos-build-disk.sh
+
       - name: Clone alloomi source code (main branch)
         run: |
-          git clone https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
+          # --depth 1, like the arm64 job: nothing in the build reads
+          # history, and a full clone costs ~800 MB of .git -- disk the
+          # .next/standalone copy and the Rust target need more. It also
+          # keeps hashFiles('alloomi/**/pnpm-lock.yaml') under its 120 s
+          # ceiling, since that glob walks .git too.
+          git clone --depth 1 --single-branch --branch "${{ env.ALLOOMI_BRANCH }}" \
+            https://x-access-token:${{ secrets.DEPLOY_ACCESS_TOKEN }}@github.com/${{ env.ALLOOMI_REPO }}.git alloomi
           cd alloomi
-          if [ "${{ github.event.inputs.commit_sha }}" != "" ]; then
-            git checkout ${{ github.event.inputs.commit_sha }}
-          else
-            git checkout ${{ env.ALLOOMI_BRANCH }}
+          if [ "${{ inputs.commit_sha }}" != "" ]; then
+            # A shallow clone only carries the branch tip, so an explicitly
+            # requested commit has to be fetched on its own.
+            git fetch --depth 1 origin "${{ inputs.commit_sha }}"
+            git checkout "${{ inputs.commit_sha }}"
           fi
           echo "Commit: $(git log -1 --oneline)"
 
