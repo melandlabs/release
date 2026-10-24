@@ -1,0 +1,45 @@
+name: Probe EC2 Mac (x86_64 cross-build feasibility)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    # The self-hosted EC2 Mac. It currently builds the arm64 bundle; this
+    # workflow only reads facts off the machine, it builds nothing.
+    runs-on: [self-hosted, macos-arm64]
+    steps:
+      - name: Probe
+        run: |
+          set +e
+          echo "===== machine ====="
+          sw_vers
+          uname -m
+          sysctl -n hw.ncpu hw.memsize 2>/dev/null
+          echo "--- brew ---"
+          ls -d /opt/homebrew /usr/local 2>/dev/null
+          echo "--- disk ---"
+          df -h / "$HOME" "$GITHUB_WORKSPACE" 2>/dev/null
+
+          echo "===== rosetta ====="
+          # A translated process reports a non-zero "translated" flag.
+          /usr/bin/arch -x86_64 /usr/bin/true 2>&1
+          echo "arch -x86_64 exit=$?"
+          sysctl -n sysctl.proc_translated 2>/dev/null
+          pgrep -l oahd 2>/dev/null
+          pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto 2>&1 | head -5
+          ls /Library/Apple/usr/libexec/oah 2>&1 | head -3
+
+          echo "===== node ====="
+          node -p "process.version + ' ' + process.arch" 2>&1
+          echo "--- npm registry: x64 claude sdk ---"
+          npm view @anthropic-ai/claude-agent-sdk-darwin-x64 version 2>&1 | head -3
+          npm view @anthropic-ai/claude-agent-sdk-darwin-arm64 version 2>&1 | head -3
+
+          echo "===== rust ====="
+          rustup target list --installed 2>&1
+          rustup target list 2>&1 | grep apple-darwin
+
+          echo "===== tools ====="
+          which lipo codesign notarytool pkgutil xattr hdiutil 2>&1
+          xcodebuild -version 2>&1 | head -3
