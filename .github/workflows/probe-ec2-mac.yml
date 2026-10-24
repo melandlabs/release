@@ -12,6 +12,33 @@ jobs:
     # workflow only reads facts off the machine, it builds nothing.
     runs-on: [self-hosted, macos-arm64]
     steps:
+      - name: Install Rosetta 2
+        # The Intel bundle is going to be cross-compiled here, which needs
+        # the x86_64 Node (and with it the x86_64 native modules and the
+        # x86_64 Turbopack binary). An x86_64 Mach-O binary only runs on
+        # Apple silicon through Rosetta 2, and the EC2 Mac image does not
+        # ship it.
+        #
+        # Installing it on the machine is a one-off: the step below is
+        # idempotent, so every later run just takes the fast path. The
+        # runner user has passwordless sudo (the signing preflight relies
+        # on it for the system keychain).
+        run: |
+          set -e
+          if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta 2 is already installed"
+          else
+            echo "Rosetta 2 is missing -- installing it"
+            sudo softwareupdate --install-rosetta --agree-to-license --verbose
+          fi
+          # The proof that it works: an x86_64 slice of a universal binary
+          # runs. Without Rosetta this fails with "Bad CPU type in
+          # executable".
+          /usr/bin/arch -x86_64 /usr/bin/true
+          echo "arch -x86_64 exit=$?"
+          pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto | head -5
+          ls /Library/Apple/usr/libexec/oah | head -3
+
       - name: Probe
         run: |
           set +e
