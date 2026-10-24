@@ -1215,10 +1215,21 @@ jobs:
 
   # ─── macOS amd64 CI ────────────────────────────────────────────────────────
   ci-alloomi-macos-amd64:
+    # Runs on the GitHub-hosted macos-15-intel runner: 4 vCPU / 14 GB.
+    #
+    # This job used to build with webpack, like the arm64 job did before
+    # #35. It can afford Turbopack where the old arm64 runner could not: the
+    # 7 GB macos-15 that #33 ran on thrashed for 56 minutes after the route
+    # table (the compile outgrew the RAM and the machine had nowhere to page
+    # to), while the same build on this 14 GB runner finished that phase in
+    # 5 seconds -- run 39597031213 (2026-10-21) built and notarized the
+    # Intel DMG on Turbopack and went green.
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-macos-amd64' }}
     runs-on: macos-15-intel
     env:
       SKIP_SIGNING: 'false'
+      # Turbopack for the Next.js production build -- see the build step below.
+      USE_TURBOPACK: 'true'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -1506,12 +1517,31 @@ jobs:
 
       - name: Build Tauri app (Intel)
         working-directory: ./alloomi/apps/web
-        run: pnpm tauri:build
+        # /usr/bin/time -l reports the peak RSS of the whole build tree plus
+        # the pageout/swap counters -- the only place the memory pressure of
+        # the build shows up in the log.
+        run: /usr/bin/time -l pnpm tauri:build
         env:
           SKIP_TYPE_CHECK: "true" # see ci-alloomi-macos-arm64
-          # Plain webpack, like before #33. This runner is macos-15-intel
-          # (14 GB), so webpack's in-memory module graph fits and there is no
-          # need for the filesystem cache the arm64 job has to use.
+          # Turbopack, same as the arm64 job. It compiles in Rust with its
+          # own allocator, so there is no V8 heap ceiling to hit and it
+          # writes no persistent build cache -- which is why this job never
+          # had the "Restore/Save Next.js build cache" steps the arm64 job
+          # has, and why there is nothing to remove here.
+          #
+          # The thrash that made #33 fail was the arm64 job's 7 GB
+          # macos-15: the compile outgrew the RAM and the machine had
+          # nowhere to page to. This runner is macos-15-intel with 14 GB, and
+          # the same build finished the route-table-to-standalone phase in
+          # 5 seconds there (run 39597031213, 2026-10-21: the Intel DMG
+          # built, notarized and uploaded green on Turbopack).
+          #
+          # NEXT_TURBOPACK_MEMORY_LIMIT is deliberately NOT set here. It caps
+          # Turbopack's Rust side, and a cap that is too low turns the compile
+          # into an internal GC thrash -- a new failure mode instead of the
+          # old one. Leaving it unset keeps the exact configuration that was
+          # measured green on this runner; /usr/bin/time -l above reports the
+          # peak RSS so the headroom is visible if it ever grows.
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           APPLE_CERTIFICATE: "${{ secrets.ED_APPLE_CERTIFICATE }}"
           APPLE_CERTIFICATE_PASSWORD: "${{ secrets.ED_APPLE_CERTIFICATE_PASSWORD }}"
