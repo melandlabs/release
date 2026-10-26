@@ -957,10 +957,31 @@ jobs:
           fi
 
       - name: Upload CI DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: alloomi-ci-dmg-macos${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
+          # archive: false keeps GitHub from wrapping the DMG in a zip.
+          #
+          # Chrome's Safe Browsing download protection unpacks a downloaded
+          # zip and, when it finds a file whose type counts as a "checked
+          # binary" (.dmg, .exe and .deb all do -- see Chromium's
+          # download_file_types.asciipb), reports the whole download as
+          # ZIPPED_EXECUTABLE. The verdict that comes back blocks the file
+          # with "此文件包含危险内容" and a 保留 button, so the artifact
+          # cannot be grabbed from the run page without a scary detour.
+          # The DMG on its own is only ALLOW_ON_USER_GESTURE -- a download
+          # started by a click is not warned about -- so serving the file
+          # raw is what makes the artifact downloadable from a browser.
+          #
+          # archive: false takes the artifact name from the file name and
+          # ignores `name:`, so r2-upload.yml identifies the artifacts by
+          # file name pattern instead of by artifact name.
+          #
+          # if-no-files-found: error because a non-zipped artifact holds
+          # exactly one file: a glob that matches nothing (or two files)
+          # has to fail the job here, not silently publish a short set.
           path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/dmg/Alloomi*.dmg
+          archive: false
+          if-no-files-found: error
 
       - name: Drop the app bundle before the Rust cache is saved
         # Last step on purpose: the DMG is uploaded, so nothing else needs
@@ -1810,10 +1831,14 @@ jobs:
           fi
 
       - name: Upload CI Intel DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: alloomi-ci-dmg-x64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
+          # archive: false → the DMG is served raw instead of zipped; see the
+          # "Upload CI DMG" step in the macOS arm64 job for why Chrome blocks
+          # a zip that contains a .dmg.
           path: ${{ github.workspace }}/${{ env.TAURI_BUNDLE_DIR }}/dmg/Alloomi*.dmg
+          archive: false
+          if-no-files-found: error
 
       - name: Drop the app bundle before the Rust cache is saved
         # Last step on purpose: the DMG is uploaded, so nothing else needs
@@ -2217,10 +2242,14 @@ jobs:
         '
 
     - name: Upload CI Linux binary
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: alloomi-ci-linux${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
+        # archive: false → the .deb is served raw instead of zipped; see the
+        # "Upload CI DMG" step in the macOS arm64 job for why Chrome blocks
+        # a zip that contains an executable.
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+        archive: false
+        if-no-files-found: error
   ci-alloomi-windows:
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-windows' }}
     runs-on: windows-2022
@@ -2580,10 +2609,14 @@ jobs:
         '
 
     - name: Upload CI Windows installer
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: alloomi-ci-windows${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
+        # archive: false → the .exe is served raw instead of zipped; see the
+        # "Upload CI DMG" step in the macOS arm64 job for why Chrome blocks
+        # a zip that contains an executable.
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/nsis/*.exe
+        archive: false
+        if-no-files-found: error
   ci-alloomi-linux-arm64:
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-linux-arm64' }}
     runs-on: ubuntu-22.04-arm
@@ -2964,7 +2997,11 @@ jobs:
         '
 
     - name: Upload CI Linux ARM64 binary
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: alloomi-ci-linux-arm64${{ inputs.enable_outlook_china && '-outlook-china' || '' }}
+        # archive: false → the .deb is served raw instead of zipped; see the
+        # "Upload CI DMG" step in the macOS arm64 job for why Chrome blocks
+        # a zip that contains an executable.
         path: ${{ github.workspace }}/alloomi/apps/web/src-tauri/target/release/bundle/deb/*.deb
+        archive: false
+        if-no-files-found: error
