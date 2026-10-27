@@ -51,26 +51,28 @@ env:
 jobs:
   upload-to-r2:
     runs-on: ubuntu-22.04
+    permissions:
+      # actions: read → list and download the artifacts of the source run.
+      # contents: read → the artifacts API calls made with GITHUB_TOKEN.
+      actions: read
+      contents: read
     steps:
       - name: Resolve run ID and naming
         id: names
         run: |
           set -euo pipefail
           if [ "${{ inputs.variant }}" = "outlook-china" ]; then
-            # ci.yml appends -outlook-china to every artifact name for this
-            # variant; bucket files use the Alloomi_outlook_china_ prefix
-            # (see the 0.6.5+ entries). These runs only exist when someone
-            # dispatched ci.yml with enable_outlook_china=true, and the
-            # "latest successful run" heuristic can never find them — the run
-            # ID has to be supplied explicitly.
+            # bucket files use the Alloomi_outlook_china_ prefix (see the
+            # 0.6.5+ entries). These runs only exist when someone dispatched
+            # ci.yml with enable_outlook_china=true, and the "latest
+            # successful run" heuristic can never find them — the run ID has
+            # to be supplied explicitly.
             if [ "${{ github.event.inputs.source_run_id }}" = "" ]; then
               echo "ERROR: variant=outlook-china requires source_run_id (the CI run dispatched with enable_outlook_china=true)."
               exit 1
             fi
-            echo "artifact_suffix=-outlook-china" >> $GITHUB_OUTPUT
             echo "name_prefix=Alloomi_outlook_china_" >> $GITHUB_OUTPUT
           else
-            echo "artifact_suffix=" >> $GITHUB_OUTPUT
             echo "name_prefix=Alloomi_" >> $GITHUB_OUTPUT
           fi
 
@@ -93,41 +95,58 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
           RUN_ID="${{ steps.source.outputs.run_id }}"
-          # No -e: a missing artifact must not abort the loop, we tally below.
-          ARTIFACTS="alloomi-ci-linux${SUFFIX} alloomi-ci-linux-arm64${SUFFIX} alloomi-ci-dmg-macos${SUFFIX} alloomi-ci-dmg-x64${SUFFIX} alloomi-ci-windows${SUFFIX}"
-          MISSING=0
-          for a in $ARTIFACTS; do
-            if ! gh run download "$RUN_ID" -R ${{ github.repository }} -D "dl/$a" -n "$a"; then
-              echo "WARN: artifact $a not found in run $RUN_ID"
-              MISSING=$((MISSING+1))
+
+          # The CI artifacts are uploaded with `archive: false` (see the
+          # "Upload CI ..." steps in ci.yml): GitHub stores the build output
+          # as-is and serves it raw, with no zip wrapped around it.
+          # `gh run download` cannot read those -- it unzips whatever the
+          # artifacts API returns and fails with "not a valid zip file" on
+          # a raw file. The artifacts API answers with a redirect to the
+          # blob storage URL of the file itself, so follow that redirect.
+          #
+          # No -e: a failed download must not abort the loop, the missing
+          # files are tallied in the rename step below.
+          COUNT=0
+          while IFS=$'\t' read -r id name; do
+            [ -n "$name" ] || continue
+            echo "downloading artifact $name (id $id)"
+            mkdir -p "dl/$name"
+            if ! curl -fsSL \
+                 -H "Authorization: token $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip" \
+                 -o "dl/$name/$name"; then
+              echo "WARN: artifact $name could not be downloaded"
+              continue
             fi
-          done
-          if [ "${{ inputs.variant }}" = "standard" ] && [ "$MISSING" -gt 0 ]; then
-            echo "ERROR: standard publishes require the full 5-artifact set; $MISSING missing."
+            COUNT=$((COUNT+1))
+          done <<< "$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts" --paginate --jq '.artifacts[] | [.id, .name] | @tsv')"
+
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: no artifacts downloaded from run $RUN_ID. Is it a ${{ inputs.variant }} run?"
             exit 1
           fi
-          if [ ! -d dl ] || [ -z "$(ls -A dl)" ]; then
-            echo "ERROR: no artifacts downloaded. Is run $RUN_ID a ${{ inputs.variant }} run?"
-            exit 1
-          fi
+          echo "downloaded $COUNT artifact(s):"
+          find dl -type f | sed 's/^/  /'
 
       - name: Rename artifacts to release filenames
         id: meta
         run: |
           set -euo pipefail
-          SUFFIX="${{ steps.names.outputs.artifact_suffix }}"
           PREFIX="${{ steps.names.outputs.name_prefix }}"
 
           # Derive the version from whatever artifact is available: tauri
-          # names files alloomi_<version>_{amd64,arm64}.deb,
-          # Alloomi_<version>_{aarch64,x64}.dmg, alloomi_<version>_x64-setup.exe
-          # (stable 0.6.7 or nightly 0.6.8-nightly.20261010). outlook-china
-          # sets are partial, so the linux amd64 deb is not guaranteed.
+          # names files alloomi_<version>_{amd64,arm64}.deb and
+          # alloomi_<version>_x64-setup.exe (stable 0.6.7 or nightly
+          # 0.6.8-nightly.20261010). The DMGs are renamed to
+          # Alloomi_ci_<commit-sha>_{aarch64,x64}.dmg and carry no version,
+          # so they are only the last resort. outlook-china sets are
+          # partial, so the linux amd64 deb is not guaranteed.
           VERSION="${{ inputs.version }}"
           if [ -z "$VERSION" ]; then
-            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.dmg' -o -name '*.exe' \) | head -n1)
+            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.exe' \) | head -n1 || true)
+            [ -n "$ANY" ] || ANY=$(find dl -type f -name '*.dmg' | head -n1 || true)
             BASE=$(basename "$ANY")
             BASE="${BASE#alloomi_}"; BASE="${BASE#Alloomi_}"
             VERSION=$(echo "$BASE" | sed -E 's/\.(deb|dmg|exe)$//; s/_(amd64|arm64|aarch64|x64)(-setup)?$//')
@@ -136,26 +155,59 @@ jobs:
             echo "ERROR: could not derive a version; pass the version input explicitly."
             exit 1
           fi
+          case "$VERSION" in
+            ci_*)
+              # Only the DMGs are there, and their file names carry a commit
+              # sha rather than a version.
+              echo "ERROR: no version in the artifact file names; pass the version input explicitly."
+              exit 1
+              ;;
+          esac
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing ${{ inputs.variant }} version: $VERSION"
 
           mkdir -p artifacts
-          # <artifact-dir> <glob> <published name>; skips artifacts the run didn't produce.
+          # <file name glob> <published name>. The artifacts are raw files
+          # named after the build output, so the platform is identified by
+          # the arch suffix of the file name.
           rename() {
             local src
             # || true: with pipefail, find on a dir this run didn't produce
             # would otherwise abort the whole step — missing artifacts are
             # legal for the outlook-china variant.
-            src=$(find "dl/$1" -name "$2" -type f 2>/dev/null | head -n1 || true)
-            [ -n "$src" ] || return 0
-            mv "$src" "artifacts/$3"
-            echo "renamed: $3"
+            src=$(find dl -type f -name "$1" 2>/dev/null | head -n1 || true)
+            if [ -z "$src" ]; then
+              echo "MISSING: no artifact matching $1"
+              return 1
+            fi
+            mv "$src" "artifacts/$2"
+            echo "renamed: $2"
+            return 0
           }
-          rename "alloomi-ci-linux${SUFFIX}"        '*.deb' "${PREFIX}${VERSION}_linux_amd64.deb"
-          rename "alloomi-ci-linux-arm64${SUFFIX}"  '*.deb' "${PREFIX}${VERSION}_linux_aarch64.deb"
-          rename "alloomi-ci-dmg-macos${SUFFIX}"    '*.dmg' "${PREFIX}${VERSION}_macOS_aarch64.dmg"
-          rename "alloomi-ci-dmg-x64${SUFFIX}"      '*.dmg' "${PREFIX}${VERSION}_macOS_amd64.dmg"
-          rename "alloomi-ci-windows${SUFFIX}"      '*.exe' "${PREFIX}${VERSION}_windows_amd64.exe"
+          FOUND=0
+          MISSING=""
+          publish() {
+            if rename "$1" "$2"; then
+              FOUND=$((FOUND+1))
+            else
+              MISSING="$MISSING $1"
+            fi
+          }
+          publish '*_aarch64.dmg' "${PREFIX}${VERSION}_macOS_aarch64.dmg"
+          publish '*_x64.dmg'     "${PREFIX}${VERSION}_macOS_amd64.dmg"
+          publish '*_amd64.deb'   "${PREFIX}${VERSION}_linux_amd64.deb"
+          publish '*_arm64.deb'   "${PREFIX}${VERSION}_linux_aarch64.deb"
+          publish '*setup.exe'    "${PREFIX}${VERSION}_windows_amd64.exe"
+          echo "found $FOUND artifact(s); missing:$MISSING"
+
+          if [ "${{ inputs.variant }}" = "standard" ] && [ "$FOUND" -ne 5 ]; then
+            echo "ERROR: standard publishes require the full 5-artifact set; missing:$MISSING"
+            exit 1
+          fi
+          if [ "$FOUND" -lt 1 ]; then
+            echo "ERROR: nothing to publish"
+            exit 1
+          fi
           ls -la artifacts/
 
       - name: Verify artifacts
