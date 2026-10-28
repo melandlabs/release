@@ -27,6 +27,11 @@ on:
         # against it makes every job skip itself -- verified on 2026-10-23
         # with a probe workflow (dispatching only_job=<job id> skipped every
         # job, including the one whose id matched).
+      sign_windows:
+        description: 'Sign the Windows installer with the code signing certificate. Every build spends 7 of the 240 signings the eSigner subscription includes per year, so turn this on only for the build you actually publish.'
+        required: false
+        type: boolean
+        default: false
   # The same workflow, callable from another workflow, so a caller can run
   # the single macOS arm64 job without dispatching the whole matrix.
   workflow_call:
@@ -46,6 +51,11 @@ on:
         required: false
         type: string
         default: ''
+      sign_windows:
+        description: 'Sign the Windows installer with the code signing certificate (see the workflow_dispatch input of the same name)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # CI trigger: bump to re-run on main
@@ -2258,6 +2268,9 @@ jobs:
       # purpose. What normally decides is the certificate itself -- a
       # missing secret only produces a notice, the build keeps running.
       SKIP_SIGNING: 'false'
+      # The sign_windows input of the workflow. Only a run that asks for it
+      # spends signing quota; see the eSigner CKA step for the details.
+      SIGN_WINDOWS: ${{ inputs.sign_windows }}
     steps:
     - name: Checkout release repo
       uses: actions/checkout@v4
@@ -2463,25 +2476,33 @@ jobs:
       shell: bash
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
-    - name: Import Windows code signing certificate
+    - name: Set up SSL.com eSigner CKA
       # Windows has no equivalent of macOS' "the app opens with a warning":
       # SmartScreen refuses to run an unsigned binary at all, so every user
       # gets the blue "Windows has protected your PC" screen and the
       # "unable to verify publisher" dialog. The only fix is an
       # Authenticode signature from a CA-issued code signing certificate.
       #
-      # Tauri signs through signtool.exe with /sha1 <thumbprint>, so the
-      # certificate has to sit in the runner's personal store: this step
-      # imports the PFX and hands the thumbprint to the config patch below.
+      # The private key never leaves the CA's HSM. Since June 2023 the
+      # CA/Browser Forum forbids handing out a downloadable PFX for a new
+      # code signing certificate, so there is nothing to import here --
+      # the key stays in SSL.com's cloud HSM and is reached through
+      # eSigner CKA, a Windows CNG key service provider that makes the
+      # certificate show up in Cert:\CurrentUser\My. Tauri then signs with
+      # the usual signtool.exe /sha1 <thumbprint> and nothing else changes.
       #
-      # Until the certificate is bought there is no secret to import, and
-      # that is not an error: the build keeps running unsigned (the notice
-      # below says so) and turns signed by itself once the secret lands.
+      # Signing is off unless the run explicitly asks for it (the
+      # sign_windows input): one Windows build spends 7 of the 240
+      # signings the eSigner subscription includes per year, and this
+      # workflow also runs every night on a schedule, so signing every
+      # build would burn the quota on artifacts nobody publishes.
       id: win_sign
       shell: pwsh
       env:
-        WINDOWS_CERTIFICATE: ${{ secrets.ED_WINDOWS_CERTIFICATE }}
-        WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ED_WINDOWS_CERTIFICATE_PASSWORD }}
+        ES_USERNAME: ${{ secrets.ED_SIGNER_USERNAME }}
+        ES_PASSWORD: ${{ secrets.ED_SIGNER_PASSWORD }}
+        ES_SECRET_CODE: ${{ secrets.ED_SIGNER_SECRET_CODE }}
+        ES_MASTER_KEY: ${{ secrets.ED_SIGNER_MASTER_KEY }}
       run: |
         $ErrorActionPreference = 'Stop'
         if ($env:SKIP_SIGNING -eq 'true') {
@@ -2489,30 +2510,70 @@ jobs:
           'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit 0
         }
-        if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
-          Write-Output '::notice::no ED_WINDOWS_CERTIFICATE secret -- the build stays unsigned and SmartScreen will keep warning about an unknown publisher'
+        if ($env:SIGN_WINDOWS -ne 'true') {
+          Write-Output '::notice::sign_windows is not set -- the build stays unsigned'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+        if ([string]::IsNullOrWhiteSpace($env:ES_USERNAME) -or
+            [string]::IsNullOrWhiteSpace($env:ES_PASSWORD) -or
+            [string]::IsNullOrWhiteSpace($env:ES_SECRET_CODE) -or
+            [string]::IsNullOrWhiteSpace($env:ES_MASTER_KEY)) {
+          Write-Output '::notice::the eSigner secrets are not set -- the build stays unsigned and SmartScreen will keep warning about an unknown publisher'
           'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit 0
         }
 
-        $pfx = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
-        # The secret may carry the line breaks `base64` adds, and
-        # FromBase64String does not tolerate them.
-        $encoded = $env:WINDOWS_CERTIFICATE -replace '\s', ''
-        [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($encoded))
-        if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-          $password = New-Object System.Security.SecureString
-        } else {
-          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-        }
-        $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\CurrentUser\My' -Password $password
-        Remove-Item $pfx -Force
+        $installDir = Join-Path $env:RUNNER_TEMP 'eSignerCKA'
+        $masterKey = Join-Path $installDir 'master.key'
 
-        # Import-PfxCertificate hands back every certificate in the PFX. Only
-        # the one carrying the private key is usable for signing.
-        $leaf = $imported | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+        Invoke-WebRequest -OutFile eSigner_CKA_Setup.zip 'https://github.com/SSLcom/eSignerCKA/releases/download/v1.1.2/SSL.COM-eSigner-CKA_1.1.2.zip'
+        Expand-Archive -Force eSigner_CKA_Setup.zip
+        Remove-Item eSigner_CKA_Setup.zip
+        $installer = Get-ChildItem -Path 'eSigner_CKA_*\*.exe' |
+            Where-Object { $_.Name -like '*Installer*' } |
+            Select-Object -First 1
+        if (-not $installer) {
+            $installer = Get-ChildItem -Path 'eSigner_CKA_*\*.exe' | Select-Object -First 1
+        }
+        if (-not $installer) {
+          throw 'the eSigner CKA archive contains no installer'
+        }
+
+        New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+        Start-Process $installer.FullName -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /DIR=`"$installDir`"" -Wait
+        # The key service provider needs the Visual C++ runtimes; the zip
+        # ships them next to the installer.
+        Get-ChildItem -Path 'setup\vc_redist.*.exe' -ErrorAction SilentlyContinue | ForEach-Object {
+            Start-Process $_.FullName -ArgumentList '/install /q' -Wait
+        }
+        & (Join-Path $installDir 'RegisterKSP.exe') | Out-Null
+        & (Join-Path $installDir 'eSignerCSP.Config.exe') | Out-Null
+
+        # The master key file is generated once, in the CKA UI, and reused by
+        # every automated signature. It comes in as base64 because GitHub
+        # secrets are text only.
+        $encodedKey = $env:ES_MASTER_KEY -replace '\s', ''
+        [IO.File]::WriteAllBytes($masterKey, [Convert]::FromBase64String($encodedKey))
+
+        # "product" (not "sandbox") -- the certificate is issued by a real CA.
+        & (Join-Path $installDir 'eSignerCKATool.exe') config -mode 'product' `
+            -user $env:ES_USERNAME -pass $env:ES_PASSWORD `
+            -totp $env:ES_SECRET_CODE -key $masterKey -r
+        & (Join-Path $installDir 'eSignerCKATool.exe') unload
+        & (Join-Path $installDir 'eSignerCKATool.exe') load
+
+        # CKA put the certificate into the personal store; that is the one
+        # signtool.exe reads when it is given a thumbprint. A fresh runner
+        # holds nothing else, but pick the Meland certificate when there is
+        # a choice so a leftover certificate cannot be used by accident.
+        $certs = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object { $_.HasPrivateKey }
+        if (-not $certs) {
+          throw 'eSigner CKA loaded no code signing certificate with a private key'
+        }
+        $leaf = $certs | Where-Object { $_.Subject -match 'Meland' } | Select-Object -First 1
         if (-not $leaf) {
-          throw 'the imported PFX holds no certificate with a private key'
+            $leaf = $certs | Select-Object -First 1
         }
         Write-Output ("signing certificate: {0}" -f $leaf.Subject)
         Write-Output ("thumbprint:         {0}" -f $leaf.Thumbprint)
@@ -2575,18 +2636,31 @@ jobs:
             # /sha1 <thumbprint> and /tr <timestamp server>, and signs
             # both the app binary and the NSIS installer. The
             # certificate itself lives in the runner's personal store
-            # (the import step above put it there).
+            # (the eSigner CKA step above put it there).
             #
             # The timestamp is not optional: without it the signature
             # stops being valid the day the certificate expires, and
             # Windows starts warning about an expired publisher.
             $content = $content -replace '("certificateThumbprint"\s*:\s*)(null|"[^"]*")', ('$1"' + $env:WINDOWS_CERT_THUMBPRINT + '"')
-            $content = $content -replace '("timestampUrl"\s*:\s*)(null|"[^"]*")', ('$1"http://timestamp.digicert.com"')
+            $content = $content -replace '("timestampUrl"\s*:\s*)(null|"[^"]*")', ('$1"http://ts.ssl.com"')
+            # Tauri only asks for an RFC 3161 timestamp when "tsp" is true;
+            # without it the bundler falls back to the legacy Authenticode
+            # timestamp (/t), which SSL.com's TSA does not answer. Drop any
+            # existing value first so the key is not written twice -- the two
+            # patterns cover "tsp" sitting before and after its neighbour.
+            $content = $content -replace '"tsp"\s*:\s*(true|false)\s*,', ''
+            $content = $content -replace ',\s*"tsp"\s*:\s*(true|false)', ''
+            $content = $content -replace '("timestampUrl"\s*:\s*"http://ts\.ssl\.com")', ('$1, "tsp": true')
           }
           Set-Content -Path $path -Value $content -NoNewline
+          # The patch above is a regex over raw JSON, so a typo in it would
+          # hand the bundler a config it cannot parse -- and that only shows
+          # up after the long compile. Parse it here instead.
+          Get-Content $path -Raw | ConvertFrom-Json | Out-Null
           Get-Content $path | Select-String 'targets'
           Get-Content $path | Select-String 'wix'
           Get-Content $path | Select-String 'certificateThumbprint'
+          Get-Content $path | Select-String 'timestampUrl'
         }
 
     - name: Cache Rust build (cargo registry + target)
@@ -2760,7 +2834,7 @@ jobs:
             if ($sig.Status -eq 'NotSigned' -or $sig.Status -eq 'HashMismatch' -or -not $sig.SignerCertificate) {
                 $unsigned += $file.FullName
             } elseif ($sig.SignerCertificate.Thumbprint -ne $env:WINDOWS_CERT_THUMBPRINT) {
-                Write-Output ("    ::error::signed with a different certificate than the imported one ({0})" -f $sig.SignerCertificate.Thumbprint)
+                Write-Output ("    ::error::signed with a different certificate than the eSigner one ({0})" -f $sig.SignerCertificate.Thumbprint)
                 $unsigned += $file.FullName
             } elseif ($sig.Status -ne 'Valid') {
                 Write-Output ("    ::warning::the signature could not be fully validated on this runner ({0})" -f $sig.Status)
@@ -2770,7 +2844,7 @@ jobs:
             Write-Output ("::error::these files are not signed: {0}" -f ($unsigned -join ', '))
             exit 1
         }
-        Write-Output 'OK: every published .exe carries an Authenticode signature from the imported certificate'
+        Write-Output 'OK: every published .exe carries an Authenticode signature from the eSigner certificate'
 
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v7
