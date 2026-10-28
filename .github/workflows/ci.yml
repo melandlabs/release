@@ -27,6 +27,11 @@ on:
         # against it makes every job skip itself -- verified on 2026-10-23
         # with a probe workflow (dispatching only_job=<job id> skipped every
         # job, including the one whose id matched).
+      sign_windows:
+        description: 'Sign the Windows installer with the code signing certificate. Every build spends 7 of the 240 signings the eSigner subscription includes per year, so turn this on only for the build you actually publish.'
+        required: false
+        type: boolean
+        default: false
   # The same workflow, callable from another workflow, so a caller can run
   # the single macOS arm64 job without dispatching the whole matrix.
   workflow_call:
@@ -46,6 +51,11 @@ on:
         required: false
         type: string
         default: ''
+      sign_windows:
+        description: 'Sign the Windows installer with the code signing certificate (see the workflow_dispatch input of the same name)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # CI trigger: bump to re-run on main
@@ -2253,6 +2263,15 @@ jobs:
   ci-alloomi-windows:
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-windows' }}
     runs-on: windows-2022
+    env:
+      # Escape hatch for the signing steps below: 'true' builds unsigned on
+      # purpose. What normally decides is the certificate itself -- a
+      # missing secret only produces a notice, the build keeps running.
+      SKIP_SIGNING: 'false'
+      # The sign_windows input of the workflow. Only a run that asks for it
+      # spends signing quota; see the eSigner CodeSignTool step for the
+      # details.
+      SIGN_WINDOWS: ${{ inputs.sign_windows }}
     steps:
     - name: Checkout release repo
       uses: actions/checkout@v4
@@ -2458,10 +2477,218 @@ jobs:
       shell: bash
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
+    - name: Set up SSL.com eSigner CodeSignTool
+      # Windows has no equivalent of macOS' "the app opens with a warning":
+      # SmartScreen refuses to run an unsigned binary at all, so every user
+      # gets the blue "Windows has protected your PC" screen and the
+      # "unable to verify publisher" dialog. The only fix is an
+      # Authenticode signature from a CA-issued code signing certificate.
+      #
+      # The private key never leaves the CA's HSM. Since June 2023 the
+      # CA/Browser Forum forbids handing out a downloadable PFX for a new
+      # code signing certificate, so there is nothing to import here --
+      # the key stays in SSL.com's cloud HSM. Signing goes through eSigner
+      # CodeSignTool, a Java CLI that talks to SSL.com's CSC API: it sends
+      # the hash of the file, never the file itself, and gets the signature
+      # back. Tauri runs it through bundle.windows.signCommand for every
+      # binary it bundles, so the build needs nothing but an account, a
+      # password and the certificate's TOTP secret -- no Windows machine,
+      # no key file, nothing in the certificate store.
+      #
+      # Signing is off unless the run explicitly asks for it (the
+      # sign_windows input): one Windows build spends 7 of the 240
+      # signings the eSigner subscription includes per year, and this
+      # workflow also runs every night on a schedule, so signing every
+      # build would burn the quota on artifacts nobody publishes.
+      id: win_sign
+      shell: pwsh
+      env:
+        ES_USERNAME: ${{ secrets.ED_SIGNER_USERNAME }}
+        ES_PASSWORD: ${{ secrets.ED_SIGNER_PASSWORD }}
+        ES_SECRET_CODE: ${{ secrets.ED_SIGNER_SECRET_CODE }}
+        ES_CREDENTIAL_ID: ${{ secrets.ED_SIGNER_CREDENTIAL_ID }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:SKIP_SIGNING -eq 'true') {
+          Write-Output '::notice::SKIP_SIGNING=true -- the build stays unsigned on purpose'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+        if ($env:SIGN_WINDOWS -ne 'true') {
+          Write-Output '::notice::sign_windows is not set -- the build stays unsigned'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+        if ([string]::IsNullOrWhiteSpace($env:ES_USERNAME) -or
+            [string]::IsNullOrWhiteSpace($env:ES_PASSWORD) -or
+            [string]::IsNullOrWhiteSpace($env:ES_SECRET_CODE)) {
+          Write-Output '::notice::the eSigner secrets are not set -- the build stays unsigned and SmartScreen will keep warning about an unknown publisher'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+
+        $toolDir = Join-Path $env:RUNNER_TEMP 'codesign'
+        # The unix archive is the same Java tool as the windows one; the
+        # windows build only adds a bundled JRE, and the runner already
+        # ships a JDK, so the smaller archive is the one to download.
+        $version = 'v1.3.2'
+        $archive = Join-Path $env:RUNNER_TEMP "CodeSignTool-$version.zip"
+        Invoke-WebRequest -UseBasicParsing -OutFile $archive "https://github.com/SSLcom/CodeSignTool/releases/download/$version/CodeSignTool-$version.zip"
+        Expand-Archive -Force $archive -DestinationPath $toolDir
+        Remove-Item $archive
+        $jar = Get-ChildItem -Path (Join-Path $toolDir 'jar') -Filter 'code_sign_tool-*.jar' | Select-Object -First 1
+        if (-not $jar) {
+          throw 'the CodeSignTool archive contains no jar'
+        }
+
+        $java = $null
+        if ($env:JAVA_HOME) {
+          $candidate = Join-Path $env:JAVA_HOME 'bin\java.exe'
+          if (Test-Path $candidate) { $java = $candidate }
+        }
+        if (-not $java) {
+          $onPath = Get-Command java -ErrorAction SilentlyContinue
+          if ($onPath) { $java = $onPath.Source }
+        }
+        if (-not $java) {
+          throw 'no Java runtime on the runner -- CodeSignTool cannot run'
+        }
+        Write-Output ("code signing tool: {0}" -f $jar.FullName)
+        Write-Output ("java:              {0}" -f $java)
+
+        # Check the account before the long compile: wrong credentials or
+        # a certificate that was never enrolled in eSigner show up here
+        # instead of 40 minutes later, inside the bundler.
+        #
+        # CodeSignTool always exits 0, even when it fails, so the exit
+        # code says nothing. It reports the problem on stdout as a line
+        # starting with "Error:", which is what gets checked instead.
+        Push-Location $toolDir
+        try {
+          $account = (& $java -jar $jar.FullName get_credential_ids "-username=$($env:ES_USERNAME)" "-password=$($env:ES_PASSWORD)") -join [Environment]::NewLine
+          Write-Output $account
+          if ($account -match '(?m)^\s*Error:') {
+            throw "CodeSignTool could not read the account -- check the credentials and make sure the certificate is enrolled in eSigner"
+          }
+          # An account with no eSigner credential at all is enrolled in
+          # nothing yet: the certificate has to be issued and enrolled in
+          # eSigner before it can sign. Say that here instead of letting
+          # every file in the bundle fail to sign one by one.
+          if ($account -notmatch '\S{8}-\S{4}-\S{4}-\S{4}-\S{12}' -and -not $env:ES_CREDENTIAL_ID) {
+            throw "the account has no eSigner code signing credential -- issue the certificate and enroll it in eSigner first"
+          }
+        } finally {
+          Pop-Location
+        }
+
+        "CODE_SIGN_TOOL_PATH=$toolDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "ES_JAVA_PATH=$java" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+        # The signing itself does not need signtool.exe -- CodeSignTool
+        # does the work -- but the bundler asks signtool whether a
+        # resource is already signed, and that lookup fails hard when the
+        # Windows SDK is missing. Hand it the path explicitly so the
+        # runner does not depend on the registry lookup.
+        $roots = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -ErrorAction SilentlyContinue
+        if ($roots -and $roots.KitsRoot10) {
+          $signtool = Get-ChildItem (Join-Path $roots.KitsRoot10 'bin') -Directory -ErrorAction SilentlyContinue |
+              Sort-Object Name -Descending |
+              ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } |
+              Where-Object { Test-Path $_ } |
+              Select-Object -First 1
+          if ($signtool) {
+            Write-Output ("signtool:           {0}" -f $signtool)
+            "TAURI_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+        }
+        if (-not $signtool) {
+          Write-Output '::warning::signtool.exe was not found on this runner -- the bundler only needs it to tell already signed resources apart'
+        }
+
+        'enabled=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    - name: Write the code signing wrapper
+      # Tauri signs every binary it bundles (the app binary, the NSIS
+      # installer and the five NSIS plugin DLLs) by running one command
+      # per file. CodeSignTool wants the path glued to the
+      # -input_file_path flag, while Tauri only substitutes a whole
+      # argument, so the call goes through this wrapper.
+      #
+      # Skipped when signing is off: the setup step above only exports
+      # CODE_SIGN_TOOL_PATH when it downloaded the tool, so without this
+      # guard the wrapper step would run against an empty path and fail
+      # the whole job on every unsigned build.
+      if: steps.win_sign.outputs.enabled == 'true'
+      shell: bash
+      run: |
+        tool_dir="$(cygpath -u "$CODE_SIGN_TOOL_PATH")"
+        cat > "$tool_dir/sign.ps1" <<'PS1'
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$Target
+        )
+
+        # One call per file Tauri bundles. Each one is a signing against
+        # the SSL.com cloud HSM and spends one of the 240 signings the
+        # eSigner subscription includes per year.
+        $ErrorActionPreference = 'Stop'
+        # CodeSignTool prints a harmless JVM warning on stderr; a native
+        # command writing there must not turn into a terminating error.
+        $PSNativeCommandUseErrorActionPreference = $false
+
+        $target = (Resolve-Path -LiteralPath $Target).Path
+        $toolDir = $env:CODE_SIGN_TOOL_PATH
+        $jar = (Get-ChildItem -Path (Join-Path $toolDir 'jar') -Filter 'code_sign_tool-*.jar' | Select-Object -First 1).FullName
+
+        $arguments = @(
+            '-jar', $jar, 'sign',
+            "-username=$($env:ES_USERNAME)",
+            "-password=$($env:ES_PASSWORD)",
+            "-totp_secret=$($env:ES_SECRET_CODE)"
+        )
+        if ($env:ES_CREDENTIAL_ID) {
+            $arguments += "-credential_id=$($env:ES_CREDENTIAL_ID)"
+        }
+        $arguments += "-input_file_path=$target"
+
+        # CodeSignTool writes the signed copy into -output_dir_path and
+        # leaves the input alone; without that flag it wants a confirmation
+        # before overwriting the input, and nobody is there to answer it.
+        $outDir = Join-Path $toolDir ('signed-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $outDir | Out-Null
+        $arguments += "-output_dir_path=$outDir"
+
+        Push-Location $toolDir
+        try {
+            # CodeSignTool exits 0 even when the signing fails, so the exit
+            # code says nothing. It reports the problem on stdout as a line
+            # starting with "Error:", which is what gets checked instead.
+            $output = (& $env:ES_JAVA_PATH @arguments) -join [Environment]::NewLine
+            if ($output) { Write-Output $output }
+            if ($output -match '(?m)^\s*Error:') {
+                throw "CodeSignTool failed: $output"
+            }
+        } finally {
+            Pop-Location
+        }
+
+        # Put the signed file back where Tauri expects it.
+        $signed = Get-ChildItem -Path $outDir -Filter (Split-Path -Leaf $target) |
+            Select-Object -First 1
+        if (-not $signed) {
+            throw "CodeSignTool did not produce a signed copy of $target"
+        }
+        Copy-Item -LiteralPath $signed.FullName -Destination $target -Force
+        Remove-Item -LiteralPath $outDir -Recurse -Force
+        PS1
+
     - name: Patch tauri.conf.* to skip MSI on Windows
       working-directory: ./alloomi/apps/web
       shell: pwsh
+      env:
+        WINDOWS_CERT_ENABLED: ${{ steps.win_sign.outputs.enabled }}
       run: |
+        $ErrorActionPreference = 'Stop'
         # `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
         # (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
         # never reached the active config, so MSI bundling kept running. Loop
@@ -2473,14 +2700,50 @@ jobs:
           'src-tauri\tauri.conf.cn.json',
           'src-tauri\tauri.conf.dev.json'
         )
+        $signCommand = $null
+        if ($env:WINDOWS_CERT_ENABLED -eq 'true') {
+          # Tauri can sign with an external command instead of signtool.exe:
+          # bundle.windows.signCommand is run once per file it bundles (the
+          # app binary, the NSIS installer and the five NSIS plugin DLLs),
+          # with the path of the file in the %1 placeholder. The command is
+          # the CodeSignTool wrapper set up above, which signs the file
+          # against SSL.com's cloud HSM and timestamps it (RFC 3161) in the
+          # same call -- so neither certificateThumbprint nor timestampUrl
+          # is needed here.
+          $wrapper = "$($env:CODE_SIGN_TOOL_PATH)\sign.ps1"
+          if (-not (Test-Path -LiteralPath $wrapper)) {
+            throw "the signing wrapper is missing ($wrapper)"
+          }
+          $signCommand = @{
+            cmd  = 'powershell'
+            args = @(
+              '-NoProfile',
+              '-ExecutionPolicy', 'Bypass',
+              '-File', $wrapper,
+              '%1'
+            )
+          } | ConvertTo-Json -Compress
+        }
         foreach ($path in $paths) {
           $content = Get-Content $path -Raw
           $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
           $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
           $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
+          if ($signCommand) {
+            # certificateThumbprint is the anchor: it is the one field the
+            # windows section always has, and the dev config has no windows
+            # section at all.
+            $content = $content -replace '("certificateThumbprint"\s*:\s*)(null|"[^"]*")', ('$1null, "signCommand": ' + $signCommand)
+          }
           Set-Content -Path $path -Value $content -NoNewline
+          # The patch above is a regex over raw JSON, so a typo in it would
+          # hand the bundler a config it cannot parse -- and that only shows
+          # up after the long compile. Parse it here instead.
+          Get-Content $path -Raw | ConvertFrom-Json | Out-Null
           Get-Content $path | Select-String 'targets'
           Get-Content $path | Select-String 'wix'
+          Get-Content $path | Select-String 'certificateThumbprint'
+          Get-Content $path | Select-String 'signCommand'
         }
 
     - name: Cache Rust build (cargo registry + target)
@@ -2534,6 +2797,13 @@ jobs:
         # On Windows the app's config forces { type: "memory" } regardless.
         RUSTUP_WINDOWS_PATH: 1
         TAURI_BUNDLE_TARGET: nsis
+        # The signing wrapper reads the account from the environment. The
+        # bundler runs it once per file it signs, and every one of those
+        # calls is a signing against SSL.com's cloud HSM.
+        ES_USERNAME: ${{ secrets.ED_SIGNER_USERNAME }}
+        ES_PASSWORD: ${{ secrets.ED_SIGNER_PASSWORD }}
+        ES_SECRET_CODE: ${{ secrets.ED_SIGNER_SECRET_CODE }}
+        ES_CREDENTIAL_ID: ${{ secrets.ED_SIGNER_CREDENTIAL_ID }}
 
     - name: Verify imessage-kit package files are in the standalone bundle
       # Regression guard for the v0.6.6 crash:
@@ -2607,6 +2877,71 @@ jobs:
           }
           console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
+
+    - name: Verify the Windows signature
+      # The signing itself happens inside the Tauri build, so this step is
+      # the guard that keeps an unsigned installer from being published:
+      # it re-reads the Authenticode signature off the files that are about
+      # to be uploaded.
+      shell: pwsh
+      env:
+        WINDOWS_CERT_ENABLED: ${{ steps.win_sign.outputs.enabled }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $root = 'alloomi/apps/web/src-tauri/target/release'
+        $files = @()
+        # The app binary and the NSIS installer are the two files a user
+        # can end up running; both have to carry the signature.
+        $files += Get-ChildItem "$root/*.exe" -ErrorAction SilentlyContinue
+        $files += Get-ChildItem "$root/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+        if (-not $files) {
+            throw "no .exe found under $root -- the build produced nothing to verify"
+        }
+
+        if ($env:WINDOWS_CERT_ENABLED -ne 'true') {
+            Write-Output '::notice::no certificate was configured, the artifacts are unsigned (expected)'
+            foreach ($file in $files) {
+                Write-Output ("unsigned: {0}" -f $file.FullName)
+            }
+            exit 0
+        }
+
+        $unsigned = @()
+        $thumbs = @{}
+        foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            $signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '<none>' }
+            Write-Output ("{0}`n    status:  {1}`n    signer:  {2}" -f $file.FullName, $sig.Status, $signer)
+            if ($sig.TimeStamperCertificate) {
+                Write-Output ("    timestamped by: {0}" -f $sig.TimeStamperCertificate.Subject)
+            } else {
+                Write-Output '    ::warning::the signature carries no timestamp -- it dies with the certificate'
+            }
+            # NotSigned means the signing silently did not happen; a broken
+            # hash means the file was touched after it was signed. UnknownError
+            # is the chain/revocation check failing on the runner itself, which
+            # says nothing about the signature -- warn, do not fail.
+            if ($sig.Status -eq 'NotSigned' -or $sig.Status -eq 'HashMismatch' -or -not $sig.SignerCertificate) {
+                $unsigned += $file.FullName
+            } elseif ($sig.SignerCertificate.Subject -notmatch 'Meland') {
+                Write-Output ("    ::error::signed by {0}, which is not the Meland Labs certificate" -f $sig.SignerCertificate.Subject)
+                $unsigned += $file.FullName
+            } else {
+                $thumbs[$sig.SignerCertificate.Thumbprint] = $true
+                if ($sig.Status -ne 'Valid') {
+                    Write-Output ("    ::warning::the signature could not be fully validated on this runner ({0})" -f $sig.Status)
+                }
+            }
+        }
+        if ($thumbs.Count -gt 1) {
+            Write-Output ("::error::the artifacts were signed with different certificates: {0}" -f (($thumbs.Keys) -join ', '))
+            exit 1
+        }
+        if ($unsigned) {
+            Write-Output ("::error::these files are not signed: {0}" -f ($unsigned -join ', '))
+            exit 1
+        }
+        Write-Output 'OK: every published .exe carries an Authenticode signature from the Meland Labs certificate'
 
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v7
