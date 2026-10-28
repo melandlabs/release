@@ -2253,6 +2253,11 @@ jobs:
   ci-alloomi-windows:
     if: ${{ !inputs.only_job || inputs.only_job == 'ci-alloomi-windows' }}
     runs-on: windows-2022
+    env:
+      # Escape hatch for the signing steps below: 'true' builds unsigned on
+      # purpose. What normally decides is the certificate itself -- a
+      # missing secret only produces a notice, the build keeps running.
+      SKIP_SIGNING: 'false'
     steps:
     - name: Checkout release repo
       uses: actions/checkout@v4
@@ -2458,9 +2463,96 @@ jobs:
       shell: bash
       run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
 
+    - name: Import Windows code signing certificate
+      # Windows has no equivalent of macOS' "the app opens with a warning":
+      # SmartScreen refuses to run an unsigned binary at all, so every user
+      # gets the blue "Windows has protected your PC" screen and the
+      # "unable to verify publisher" dialog. The only fix is an
+      # Authenticode signature from a CA-issued code signing certificate.
+      #
+      # Tauri signs through signtool.exe with /sha1 <thumbprint>, so the
+      # certificate has to sit in the runner's personal store: this step
+      # imports the PFX and hands the thumbprint to the config patch below.
+      #
+      # Until the certificate is bought there is no secret to import, and
+      # that is not an error: the build keeps running unsigned (the notice
+      # below says so) and turns signed by itself once the secret lands.
+      id: win_sign
+      shell: pwsh
+      env:
+        WINDOWS_CERTIFICATE: ${{ secrets.ED_WINDOWS_CERTIFICATE }}
+        WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ED_WINDOWS_CERTIFICATE_PASSWORD }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:SKIP_SIGNING -eq 'true') {
+          Write-Output '::notice::SKIP_SIGNING=true -- the build stays unsigned on purpose'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+        if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+          Write-Output '::notice::no ED_WINDOWS_CERTIFICATE secret -- the build stays unsigned and SmartScreen will keep warning about an unknown publisher'
+          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          exit 0
+        }
+
+        $pfx = Join-Path $env:RUNNER_TEMP 'windows-signing.pfx'
+        # The secret may carry the line breaks `base64` adds, and
+        # FromBase64String does not tolerate them.
+        $encoded = $env:WINDOWS_CERTIFICATE -replace '\s', ''
+        [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($encoded))
+        if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+          $password = New-Object System.Security.SecureString
+        } else {
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+        }
+        $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\CurrentUser\My' -Password $password
+        Remove-Item $pfx -Force
+
+        # Import-PfxCertificate hands back every certificate in the PFX. Only
+        # the one carrying the private key is usable for signing.
+        $leaf = $imported | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+        if (-not $leaf) {
+          throw 'the imported PFX holds no certificate with a private key'
+        }
+        Write-Output ("signing certificate: {0}" -f $leaf.Subject)
+        Write-Output ("thumbprint:         {0}" -f $leaf.Thumbprint)
+        Write-Output ("valid until:        {0}" -f $leaf.NotAfter)
+
+        # Tauri shells out to signtool.exe and finds it through the Windows
+        # SDK registry key. Resolving it here turns "the SDK is missing" into
+        # a clear error at the start of the job instead of a SignToolNotFound
+        # after the long compile, and the path is handed over explicitly so
+        # the build does not depend on the registry lookup.
+        $signtool = $null
+        $roots = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -ErrorAction SilentlyContinue
+        if ($roots -and $roots.KitsRoot10) {
+            $bins = Get-ChildItem (Join-Path $roots.KitsRoot10 'bin') -Directory -ErrorAction SilentlyContinue |
+                Sort-Object Name -Descending
+            $signtool = $bins |
+                ForEach-Object { Join-Path $_.FullName 'x64\signtool.exe' } |
+                Where-Object { Test-Path $_ } |
+                Select-Object -First 1
+        }
+        if (-not $signtool) {
+            $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter 'signtool.exe' -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -like '*\x64\*' } |
+                Select-Object -First 1
+        }
+        if (-not $signtool) {
+            throw 'signtool.exe was not found -- the Windows SDK is missing from the runner'
+        }
+        Write-Output ("signtool:           {0}" -f $signtool)
+        "TAURI_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+        'enabled=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "thumbprint=$($leaf.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
     - name: Patch tauri.conf.* to skip MSI on Windows
       working-directory: ./alloomi/apps/web
       shell: pwsh
+      env:
+        WINDOWS_CERT_ENABLED: ${{ steps.win_sign.outputs.enabled }}
+        WINDOWS_CERT_THUMBPRINT: ${{ steps.win_sign.outputs.thumbprint }}
       run: |
         # `pnpm tauri:build` reads the regional config picked by ALLOOMI_REGION
         # (default: intl → tauri.conf.intl.json). Patching only tauri.conf.json
@@ -2478,9 +2570,23 @@ jobs:
           $content = $content -replace '"targets"\s*:\s*"all"', '"targets": ["nsis"]'
           $content = $content -replace '"targets"\s*:\s*\[.*?\]', '"targets": ["nsis"]'
           $content = $content -replace '"wix"\s*:\s*\{[^}]*\}', '"wix": null'
+          if ($env:WINDOWS_CERT_ENABLED -eq 'true' -and $env:WINDOWS_CERT_THUMBPRINT) {
+            # Tauri's built-in signing: it runs signtool.exe with
+            # /sha1 <thumbprint> and /tr <timestamp server>, and signs
+            # both the app binary and the NSIS installer. The
+            # certificate itself lives in the runner's personal store
+            # (the import step above put it there).
+            #
+            # The timestamp is not optional: without it the signature
+            # stops being valid the day the certificate expires, and
+            # Windows starts warning about an expired publisher.
+            $content = $content -replace '("certificateThumbprint"\s*:\s*)(null|"[^"]*")', ('$1"' + $env:WINDOWS_CERT_THUMBPRINT + '"')
+            $content = $content -replace '("timestampUrl"\s*:\s*)(null|"[^"]*")', ('$1"http://timestamp.digicert.com"')
+          }
           Set-Content -Path $path -Value $content -NoNewline
           Get-Content $path | Select-String 'targets'
           Get-Content $path | Select-String 'wix'
+          Get-Content $path | Select-String 'certificateThumbprint'
         }
 
     - name: Cache Rust build (cargo registry + target)
@@ -2607,6 +2713,64 @@ jobs:
           }
           console.log("OK: pdf.js runtime (canvas polyfill + worker) present in standalone bundle");
         '
+
+    - name: Verify the Windows signature
+      # The signing itself happens inside the Tauri build, so this step is
+      # the guard that keeps an unsigned installer from being published:
+      # it re-reads the Authenticode signature off the files that are about
+      # to be uploaded.
+      shell: pwsh
+      env:
+        WINDOWS_CERT_ENABLED: ${{ steps.win_sign.outputs.enabled }}
+        WINDOWS_CERT_THUMBPRINT: ${{ steps.win_sign.outputs.thumbprint }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $root = 'alloomi/apps/web/src-tauri/target/release'
+        $files = @()
+        # The app binary and the NSIS installer are the two files a user
+        # can end up running; both have to carry the signature.
+        $files += Get-ChildItem "$root/*.exe" -ErrorAction SilentlyContinue
+        $files += Get-ChildItem "$root/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+        if (-not $files) {
+            throw "no .exe found under $root -- the build produced nothing to verify"
+        }
+
+        if ($env:WINDOWS_CERT_ENABLED -ne 'true') {
+            Write-Output '::notice::no certificate was configured, the artifacts are unsigned (expected)'
+            foreach ($file in $files) {
+                Write-Output ("unsigned: {0}" -f $file.FullName)
+            }
+            exit 0
+        }
+
+        $unsigned = @()
+        foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file.FullName
+            $signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { '<none>' }
+            Write-Output ("{0}`n    status:  {1}`n    signer:  {2}" -f $file.FullName, $sig.Status, $signer)
+            if ($sig.TimeStamperCertificate) {
+                Write-Output ("    timestamped by: {0}" -f $sig.TimeStamperCertificate.Subject)
+            } else {
+                Write-Output '    ::warning::the signature carries no timestamp -- it dies with the certificate'
+            }
+            # NotSigned means the signing silently did not happen; a broken
+            # hash means the file was touched after it was signed. UnknownError
+            # is the chain/revocation check failing on the runner itself, which
+            # says nothing about the signature -- warn, do not fail.
+            if ($sig.Status -eq 'NotSigned' -or $sig.Status -eq 'HashMismatch' -or -not $sig.SignerCertificate) {
+                $unsigned += $file.FullName
+            } elseif ($sig.SignerCertificate.Thumbprint -ne $env:WINDOWS_CERT_THUMBPRINT) {
+                Write-Output ("    ::error::signed with a different certificate than the imported one ({0})" -f $sig.SignerCertificate.Thumbprint)
+                $unsigned += $file.FullName
+            } elseif ($sig.Status -ne 'Valid') {
+                Write-Output ("    ::warning::the signature could not be fully validated on this runner ({0})" -f $sig.Status)
+            }
+        }
+        if ($unsigned) {
+            Write-Output ("::error::these files are not signed: {0}" -f ($unsigned -join ', '))
+            exit 1
+        }
+        Write-Output 'OK: every published .exe carries an Authenticode signature from the imported certificate'
 
     - name: Upload CI Windows installer
       uses: actions/upload-artifact@v7
