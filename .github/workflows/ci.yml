@@ -2559,11 +2559,23 @@ jobs:
         # Check the account before the long compile: wrong credentials or
         # a certificate that was never enrolled in eSigner show up here
         # instead of 40 minutes later, inside the bundler.
+        #
+        # CodeSignTool always exits 0, even when it fails, so the exit
+        # code says nothing. It reports the problem on stdout as a line
+        # starting with "Error:", which is what gets checked instead.
         Push-Location $toolDir
         try {
-          & $java -jar $jar.FullName get_credential_ids "-username=$($env:ES_USERNAME)" "-password=$($env:ES_PASSWORD)"
-          if ($LASTEXITCODE -ne 0) {
-            throw "CodeSignTool could not read the account (exit $LASTEXITCODE) -- check the credentials and make sure the certificate is enrolled in eSigner"
+          $account = (& $java -jar $jar.FullName get_credential_ids "-username=$($env:ES_USERNAME)" "-password=$($env:ES_PASSWORD)") -join [Environment]::NewLine
+          Write-Output $account
+          if ($account -match '(?m)^\s*Error:') {
+            throw "CodeSignTool could not read the account -- check the credentials and make sure the certificate is enrolled in eSigner"
+          }
+          # An account with no eSigner credential at all is enrolled in
+          # nothing yet: the certificate has to be issued and enrolled in
+          # eSigner before it can sign. Say that here instead of letting
+          # every file in the bundle fail to sign one by one.
+          if ($account -notmatch '\S{8}-\S{4}-\S{4}-\S{4}-\S{12}' -and -not $env:ES_CREDENTIAL_ID) {
+            throw "the account has no eSigner code signing credential -- issue the certificate and enroll it in eSigner first"
           }
         } finally {
           Pop-Location
@@ -2620,6 +2632,9 @@ jobs:
         # the SSL.com cloud HSM and spends one of the 240 signings the
         # eSigner subscription includes per year.
         $ErrorActionPreference = 'Stop'
+        # CodeSignTool prints a harmless JVM warning on stderr; a native
+        # command writing there must not turn into a terminating error.
+        $PSNativeCommandUseErrorActionPreference = $false
 
         $target = (Resolve-Path -LiteralPath $Target).Path
         $toolDir = $env:CODE_SIGN_TOOL_PATH
@@ -2635,19 +2650,36 @@ jobs:
             $arguments += "-credential_id=$($env:ES_CREDENTIAL_ID)"
         }
         $arguments += "-input_file_path=$target"
-        # -override replaces the file with the signed one. Without it the
-        # tool waits for a confirmation nobody is there to answer.
-        $arguments += '-override=true'
+
+        # CodeSignTool writes the signed copy into -output_dir_path and
+        # leaves the input alone; without that flag it wants a confirmation
+        # before overwriting the input, and nobody is there to answer it.
+        $outDir = Join-Path $toolDir ('signed-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $outDir | Out-Null
+        $arguments += "-output_dir_path=$outDir"
 
         Push-Location $toolDir
         try {
-            & $env:ES_JAVA_PATH @arguments
-            if ($LASTEXITCODE -ne 0) {
-                throw "CodeSignTool failed with exit code $LASTEXITCODE"
+            # CodeSignTool exits 0 even when the signing fails, so the exit
+            # code says nothing. It reports the problem on stdout as a line
+            # starting with "Error:", which is what gets checked instead.
+            $output = (& $env:ES_JAVA_PATH @arguments) -join [Environment]::NewLine
+            if ($output) { Write-Output $output }
+            if ($output -match '(?m)^\s*Error:') {
+                throw "CodeSignTool failed: $output"
             }
         } finally {
             Pop-Location
         }
+
+        # Put the signed file back where Tauri expects it.
+        $signed = Get-ChildItem -Path $outDir -Filter (Split-Path -Leaf $target) |
+            Select-Object -First 1
+        if (-not $signed) {
+            throw "CodeSignTool did not produce a signed copy of $target"
+        }
+        Copy-Item -LiteralPath $signed.FullName -Destination $target -Force
+        Remove-Item -LiteralPath $outDir -Recurse -Force
         PS1
 
     - name: Patch tauri.conf.* to skip MSI on Windows
