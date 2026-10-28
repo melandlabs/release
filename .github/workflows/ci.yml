@@ -2601,6 +2601,12 @@ jobs:
       # per file. CodeSignTool wants the path glued to the
       # -input_file_path flag, while Tauri only substitutes a whole
       # argument, so the call goes through this wrapper.
+      #
+      # Skipped when signing is off: the setup step above only exports
+      # CODE_SIGN_TOOL_PATH when it downloaded the tool, so without this
+      # guard the wrapper step would run against an empty path and fail
+      # the whole job on every unsigned build.
+      if: steps.win_sign.outputs.enabled == 'true'
       shell: bash
       run: |
         tool_dir="$(cygpath -u "$CODE_SIGN_TOOL_PATH")"
