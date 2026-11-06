@@ -82,7 +82,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RUN_ID=$(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=1 --json databaseId --jq '.[0].databaseId')
+          set -euo pipefail
+          # A successful ci.yml run is not always a full build. Dispatching
+          # only_job / only_jobs (including CI Alloomi (macOS arm64 + Windows))
+          # still finishes green, with the other platforms skipped. Publishing
+          # that run as the default source would upload a short set and then
+          # refuse it. Walk recent successes until every platform job succeeded.
+          RUN_ID=""
+          for id in $(gh run list --workflow=ci.yml --status=success --repo=${{ github.repository }} --limit=20 --json databaseId --jq '.[].databaseId'); do
+            count=$(gh run view "$id" --repo=${{ github.repository }} --json jobs --jq '
+              [.jobs[]
+                | select(.conclusion == "success")
+                | .name
+                | select(
+                    . == "ci-alloomi-macos-arm64"
+                    or . == "ci-alloomi-macos-amd64"
+                    or . == "ci-alloomi-linux-amd64"
+                    or . == "ci-alloomi-windows"
+                    or . == "ci-alloomi-linux-arm64"
+                  )
+              ] | unique | length
+            ')
+            echo "run $id successful platform jobs: $count"
+            if [ "$count" = "5" ]; then
+              RUN_ID=$id
+              break
+            fi
+          done
+          if [ -z "$RUN_ID" ]; then
+            echo "ERROR: none of the last 20 successful ci.yml runs built all 5 platforms. Pass source_run_id."
+            exit 1
+          fi
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
       - name: Resolve source run ID

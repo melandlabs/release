@@ -1,0 +1,26 @@
+name: CI Alloomi (macOS arm64 + Windows)
+
+# Manual build of the two platforms we ship most often. The jobs themselves
+# stay in ci.yml; this file only selects them. Push and the daily schedule
+# still run the full five-platform ci.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Specific alloomi commit SHA to build (optional, branch tip when empty)'
+        required: false
+        type: string
+      enable_outlook_china:
+        description: 'Build the Outlook (21Vianet) customer variant'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/ci.yml
+    with:
+      commit_sha: ${{ inputs.commit_sha || '' }}
+      enable_outlook_china: ${{ inputs.enable_outlook_china == true }}
+      only_jobs: ci-alloomi-macos-arm64,ci-alloomi-windows
+    secrets: inherit
