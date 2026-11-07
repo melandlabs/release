@@ -272,10 +272,34 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: true
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: adaptive
         run: |
           set -euo pipefail
+          aws configure set default.s3.multipart_threshold 64MB
+          aws configure set default.s3.multipart_chunksize 16MB
+          aws configure set default.s3.max_concurrent_requests 2
+          aws configure set default.s3.max_bandwidth 50MB/s
+          upload_one() {
+            local f="$1"
+            local attempt=1
+            local max=5
+            while true; do
+              echo "upload $f (attempt $attempt/$max)"
+              if aws s3 cp "$f" "s3://${{ vars.R2_BUCKET }}/$f" \
+                  --endpoint-url "$R2_ENDPOINT" --region auto; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max" ]; then
+                echo "ERROR: failed to upload $f after $max attempts"
+                return 1
+              fi
+              sleep $((attempt * 8))
+              attempt=$((attempt + 1))
+            done
+          }
           for f in *; do
-            aws s3 cp "$f" "s3://${{ vars.R2_BUCKET }}/$f" --endpoint-url "$R2_ENDPOINT" --region auto
+            upload_one "$f"
           done
 
       - name: Update latest.json and release.json
