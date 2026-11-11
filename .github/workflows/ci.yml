@@ -13,7 +13,7 @@ on:
         required: false
         type: string
       enable_outlook_china:
-        description: 'Build the Outlook (21Vianet) customer variant: appends NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1 to the bundled .env and suffixes every artifact name with -outlook-china'
+        description: 'Build the Outlook (21Vianet) customer variant: appends NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1 and NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1 to the bundled .env and suffixes every artifact name with -outlook-china'
         required: false
         type: boolean
         default: false
@@ -345,13 +345,15 @@ jobs:
 
           EOF
 
-      - name: Enable Outlook (21Vianet) connector
-        # Manual-dispatch customer variant only. The flag is read from the .env
-        # that ships inside the bundle, so it must live in the file, not just in
-        # the build process environment.
+      - name: Enable customer variant flags
+        # Manual-dispatch customer variant only. The flags are read from the
+        # .env that ships inside the bundle, so they must live in the file, not
+        # just in the build process environment.
         if: inputs.enable_outlook_china
         working-directory: ./alloomi/apps/web
-        run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        run: |
+          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
       - name: Prepare Apple signing identity
         # The signing preflight lives in a shared composite action: the
@@ -1325,13 +1327,15 @@ jobs:
 
           EOF
 
-      - name: Enable Outlook (21Vianet) connector
-        # Manual-dispatch customer variant only. The flag is read from the .env
-        # that ships inside the bundle, so it must live in the file, not just in
-        # the build process environment.
+      - name: Enable customer variant flags
+        # Manual-dispatch customer variant only. The flags are read from the
+        # .env that ships inside the bundle, so they must live in the file, not
+        # just in the build process environment.
         if: inputs.enable_outlook_china
         working-directory: ./alloomi/apps/web
-        run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        run: |
+          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
       - name: Prepare Apple signing identity
         # The signing preflight lives in a shared composite action: the
@@ -2068,13 +2072,15 @@ jobs:
 
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
-      # Manual-dispatch customer variant only. The flag is read from the .env
-      # that ships inside the bundle, so it must live in the file, not just in
-      # the build process environment.
+    - name: Enable customer variant flags
+      # Manual-dispatch customer variant only. The flags are read from the
+      # .env that ships inside the bundle, so they must live in the file, not
+      # just in the build process environment.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
-      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+      run: |
+        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip AppImage on Linux
       working-directory: ./alloomi/apps/web
@@ -2459,14 +2465,16 @@ jobs:
 
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
-      # Manual-dispatch customer variant only. The flag is read from the .env
-      # that ships inside the bundle, so it must live in the file, not just in
-      # the build process environment.
+    - name: Enable customer variant flags
+      # Manual-dispatch customer variant only. The flags are read from the
+      # .env that ships inside the bundle, so they must live in the file, not
+      # just in the build process environment.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
       shell: bash
-      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+      run: |
+        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip MSI on Windows
       working-directory: ./alloomi/apps/web
@@ -2830,13 +2838,15 @@ jobs:
   
         EOF
 
-    - name: Enable Outlook (21Vianet) connector
-      # Manual-dispatch customer variant only. The flag is read from the .env
-      # that ships inside the bundle, so it must live in the file, not just in
-      # the build process environment.
+    - name: Enable customer variant flags
+      # Manual-dispatch customer variant only. The flags are read from the
+      # .env that ships inside the bundle, so they must live in the file, not
+      # just in the build process environment.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
-      run: echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+      run: |
+        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip AppImage on Linux ARM64
       working-directory: ./alloomi/apps/web
