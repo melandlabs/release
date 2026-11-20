@@ -92,10 +92,27 @@ jobs:
     runs-on: [self-hosted, macos-arm64]
     env:
       SKIP_SIGNING: 'false'
-      # Turbopack is back on now that the runner has the memory for it. The
-      # compile drops from ~75 min to ~38 min (measured in #33), and the
-      # 56-minute thrash it used to hit afterwards is gone with 32 GB.
-      USE_TURBOPACK: 'true'
+      # Turbopack is off again. Its Rust backend panics in the middle of the
+      # compile -- "Dependency tracking is disabled so invalidation is not
+      # allowed" -- and takes the whole build down with it. That is an
+      # upstream Next.js bug (vercel/next.js#90242, #84585), still unfixed
+      # in the 16.2.1 we ship, so it cannot be fixed from here.
+      #
+      # It hit both macOS legs of the nightly run 44741945965 (2026-11-20) on
+      # the same commit: the Apple silicon leg 4m27s into the compile, the
+      # Intel leg 9m17s in. The Linux legs of that same run built the same
+      # commit with webpack and shipped, so the code is fine and the
+      # compiler is not.
+      #
+      # The webpack compile is ~75 min against Turbopack's ~38 min (measured
+      # in #33), so this leg gets ~37 minutes slower -- the price of
+      # shipping something. Flip this back to 'true' once the upstream bug
+      # is fixed.
+      #
+      # The .next/cache steps below re-enable with this switch, but on macOS
+      # the webpack cache is in-process (ALLOOMI_WEBPACK_FS_CACHE is not set
+      # here), so they stay no-ops and the compile is a cold one.
+      USE_TURBOPACK: 'false'
     steps:
       - name: Checkout release repo
         uses: actions/checkout@v4
@@ -575,14 +592,17 @@ jobs:
           # USE_TURBOPACK comes from the job env: it makes
           # apps/web/scripts/run-tauri-build.js call `next build --turbopack`
           # instead of the webpack build. The compile drops from ~75 min to
-          # ~38 min (measured in #33) and it needs no persistent build cache,
-          # which is why the .next/cache steps above are skipped.
+          # ~38 min (measured in #33) and it needs no persistent build cache.
+          # It is off for now -- Turbopack panics mid-compile and takes the
+          # release with it (see the job env above) -- so this step compiles
+          # with webpack.
           #
-          # Turbopack's Rust side runs in the same process as the Next.js
-          # build, so it is the side that actually wants the RAM. This is an
-          # upper bound it tries to stay under: 16 GB leaves 8 GB of the
-          # 32 GB runner for the V8 heap (build:turbo caps that at 8 GB) plus
-          # the OS and the Tauri/Rust build that follows.
+          # NEXT_TURBOPACK_MEMORY_LIMIT only applies when Turbopack is back
+          # on: it caps Turbopack's Rust side, which runs in the same process
+          # as the Next.js build and is the side that actually wants the RAM.
+          # 16 GB leaves 8 GB of the 32 GB runner for the V8 heap (build:turbo
+          # caps that at 8 GB) plus the OS and the Tauri/Rust build that
+          # follows.
           NEXT_TURBOPACK_MEMORY_LIMIT: "16384"
           MACOSX_DEPLOYMENT_TARGET: "12.0"
           # Skip the DMG that optimize-tauri-bundle.js packs at the end of the
@@ -1022,8 +1042,10 @@ jobs:
     runs-on: [self-hosted, macos-arm64]
     env:
       SKIP_SIGNING: 'false'
-      # Turbopack for the Next.js production build -- see the build step below.
-      USE_TURBOPACK: 'true'
+      # Turbopack for the Next.js production build -- off for now, see the
+      # arm64 job above: its compiler panics mid-build and takes the release
+      # with it (run 44741945965, 2026-11-20, both macOS legs).
+      USE_TURBOPACK: 'false'
       # The Rust target this job builds for. Cargo nests the triple under
       # the target directory, so the .app lands in
       # src-tauri/target/x86_64-apple-darwin/release/bundle instead of
