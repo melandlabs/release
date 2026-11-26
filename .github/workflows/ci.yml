@@ -32,6 +32,14 @@ on:
         required: false
         type: string
         default: ''
+      alloomi_region:
+        description: 'Region to build the client for. cn ships the China installer: bundle id cn.com.alloomi.app, cloud app.alloomi.cn, LLM gateway ai.app.alloomi.cn, update channel download.alloomi.cn, data root ~/.alloomi-cn. intl is the international build.'
+        required: false
+        type: choice
+        options:
+          - intl
+          - cn
+        default: intl
   # Callable from another workflow. only_job selects one platform;
   # only_jobs selects several. ci-macos-arm-windows.yml uses only_jobs.
   workflow_call:
@@ -56,6 +64,15 @@ on:
         required: false
         type: string
         default: ''
+      alloomi_region:
+        # A reusable workflow cannot declare a choice input, so the value is
+        # a string here and the caller has to spell it out. The script and the
+        # build script both reject an unknown value, so a typo fails the run
+        # instead of silently shipping the international build.
+        description: 'Region to build the client for (intl or cn).'
+        required: false
+        type: string
+        default: intl
 
 env:
   # CI trigger: bump to re-run on main
@@ -63,6 +80,18 @@ env:
   RUST_VERSION: '1.93'
   ALLOOMI_REPO: 'melandlabs/alloomi'
   ALLOOMI_BRANCH: 'main'
+  # The region this run builds. The value reaches three layers that each
+  # need it and each reads it differently:
+  #   - scripts/write-desktop-env.sh picks the .env that ships in the bundle
+  #     (which cloud the installed client talks to),
+  #   - apps/web/scripts/tauri-build-region.mjs picks
+  #     src-tauri/tauri.conf.<region>.json (the bundle identifier and the
+  #     installer metadata that are OS-level state),
+  #   - the Rust build compiles ALLOOMI_REGION in, so the installed binary
+  #     defaults to the region's data root and update channel.
+  # `inputs` is empty for the push and schedule triggers, so the fallback
+  # keeps those on the international build.
+  ALLOOMI_REGION: ${{ inputs.alloomi_region || 'intl' }}
 
 jobs:
   # ─── MacOS arm64 CI ───────────────────────────────────────────────────────────────
@@ -334,33 +363,17 @@ jobs:
           '
 
       - name: Create .env file
+        # The .env ships inside the bundle (it is a Tauri resource) and
+        # the Next.js standalone server reads it at runtime, so it decides
+        # which cloud the installed client talks to. One writer for both
+        # regions: the intl build keeps the OpenRouter endpoints, the cn
+        # build points at app.alloomi.cn and the China LLM gateway.
         working-directory: ./alloomi/apps/web
-        run: |
-          cat > .env << 'EOF'
-
-          # Cloud API Configuration for Tauri Desktop App
-          CLOUD_API_URL=https://app.alloomi.ai
-          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-
-          # Local development URL (for Tauri mode)
-          NEXT_PUBLIC_APP_URL=http://localhost:3415
-
-          LLM_BASE_URL=https://openrouter.ai/api/v1
-          LLM_MODEL=google/gemini-3-flash-preview
-          LLM_REASONING_MODEL=google/gemini-3-flash-preview
-          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
-          LLM_IMAGE_MODEL=openai/gpt-5-image
-
-          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
-          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-
-          TELEGRAM_MODE=pooling
-
-          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
-          API_TIMEOUT_MS=3000000
-          IS_TAURI=true
-
-          EOF
+        shell: bash
+        # Paths are relative to the working directory above, not to the
+        # workspace: GITHUB_WORKSPACE carries backslashes on the Windows
+        # runner, and Git Bash mangles them.
+        run: bash ../../../scripts/write-desktop-env.sh ../.. "$ALLOOMI_REGION"
 
       - name: Enable customer variant flags
         # Manual-dispatch customer variant only. The flags are read from the
@@ -1327,27 +1340,17 @@ jobs:
           '
 
       - name: Create .env file
+        # The .env ships inside the bundle (it is a Tauri resource) and
+        # the Next.js standalone server reads it at runtime, so it decides
+        # which cloud the installed client talks to. One writer for both
+        # regions: the intl build keeps the OpenRouter endpoints, the cn
+        # build points at app.alloomi.cn and the China LLM gateway.
         working-directory: ./alloomi/apps/web
-        run: |
-          cat > .env << 'EOF'
-
-          CLOUD_API_URL=https://app.alloomi.ai
-          NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-          NEXT_PUBLIC_APP_URL=http://localhost:3415
-          LLM_BASE_URL=https://openrouter.ai/api/v1
-          LLM_MODEL=google/gemini-3-flash-preview
-          LLM_REASONING_MODEL=google/gemini-3-flash-preview
-          LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
-          LLM_IMAGE_MODEL=openai/gpt-5-image
-          LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
-          LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-          TELEGRAM_MODE=pooling
-
-          ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
-          API_TIMEOUT_MS=3000000
-          IS_TAURI=true
-
-          EOF
+        shell: bash
+        # Paths are relative to the working directory above, not to the
+        # workspace: GITHUB_WORKSPACE carries backslashes on the Windows
+        # runner, and Git Bash mangles them.
+        run: bash ../../../scripts/write-desktop-env.sh ../.. "$ALLOOMI_REGION"
 
       - name: Enable customer variant flags
         # Manual-dispatch customer variant only. The flags are read from the
@@ -2069,30 +2072,17 @@ jobs:
         '
 
     - name: Create .env file
+      # The .env ships inside the bundle (it is a Tauri resource) and
+      # the Next.js standalone server reads it at runtime, so it decides
+      # which cloud the installed client talks to. One writer for both
+      # regions: the intl build keeps the OpenRouter endpoints, the cn
+      # build points at app.alloomi.cn and the China LLM gateway.
       working-directory: ./alloomi/apps/web
-      run: |
-        cat > .env << 'EOF'
-
-        CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_APP_URL=http://localhost:3415
-
-        LLM_BASE_URL=https://openrouter.ai/api/v1
-        LLM_MODEL=google/gemini-3-flash-preview
-        LLM_REASONING_MODEL=google/gemini-3-flash-preview
-        LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
-        LLM_IMAGE_MODEL=openai/gpt-5-image
-
-        LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
-        LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-
-        TELEGRAM_MODE=pooling
-
-        ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
-        API_TIMEOUT_MS=3000000
-        IS_TAURI=true
-
-        EOF
+      shell: bash
+      # Paths are relative to the working directory above, not to the
+      # workspace: GITHUB_WORKSPACE carries backslashes on the Windows
+      # runner, and Git Bash mangles them.
+      run: bash ../../../scripts/write-desktop-env.sh ../.. "$ALLOOMI_REGION"
 
     - name: Enable customer variant flags
       # Manual-dispatch customer variant only. The flags are read from the
@@ -2461,31 +2451,17 @@ jobs:
         '
 
     - name: Create .env file
+      # The .env ships inside the bundle (it is a Tauri resource) and
+      # the Next.js standalone server reads it at runtime, so it decides
+      # which cloud the installed client talks to. One writer for both
+      # regions: the intl build keeps the OpenRouter endpoints, the cn
+      # build points at app.alloomi.cn and the China LLM gateway.
       working-directory: ./alloomi/apps/web
       shell: bash
-      run: |
-        cat > .env << 'EOF'
-
-        CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_APP_URL=http://localhost:3415
-
-        LLM_BASE_URL=https://openrouter.ai/api/v1
-        LLM_MODEL=google/gemini-3-flash-preview
-        LLM_REASONING_MODEL=google/gemini-3-flash-preview
-        LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
-        LLM_IMAGE_MODEL=openai/gpt-5-image
-
-        LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
-        LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-
-        TELEGRAM_MODE=pooling
-
-        ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
-        API_TIMEOUT_MS=3000000
-        IS_TAURI=true
-
-        EOF
+      # Paths are relative to the working directory above, not to the
+      # workspace: GITHUB_WORKSPACE carries backslashes on the Windows
+      # runner, and Git Bash mangles them.
+      run: bash ../../../scripts/write-desktop-env.sh ../.. "$ALLOOMI_REGION"
 
     - name: Enable customer variant flags
       # Manual-dispatch customer variant only. The flags are read from the
@@ -2838,27 +2814,17 @@ jobs:
         '
   
     - name: Create .env file
+      # The .env ships inside the bundle (it is a Tauri resource) and
+      # the Next.js standalone server reads it at runtime, so it decides
+      # which cloud the installed client talks to. One writer for both
+      # regions: the intl build keeps the OpenRouter endpoints, the cn
+      # build points at app.alloomi.cn and the China LLM gateway.
       working-directory: ./alloomi/apps/web
-      run: |
-        cat > .env << 'EOF'
-  
-        CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_CLOUD_API_URL=https://app.alloomi.ai
-        NEXT_PUBLIC_APP_URL=http://localhost:3415
-        LLM_BASE_URL=https://openrouter.ai/api/v1
-        LLM_MODEL=google/gemini-3-flash-preview
-        LLM_REASONING_MODEL=google/gemini-3-flash-preview
-        LLM_VISION_LANGUAGE_MODEL=google/gemini-3-flash-preview
-        LLM_IMAGE_MODEL=openai/gpt-5-image
-        LLM_EMBEDDING_MODEL=qwen/qwen3-embedding-4b
-        LLM_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
-        TELEGRAM_MODE=pooling
-  
-        ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
-        API_TIMEOUT_MS=3000000
-        IS_TAURI=true
-  
-        EOF
+      shell: bash
+      # Paths are relative to the working directory above, not to the
+      # workspace: GITHUB_WORKSPACE carries backslashes on the Windows
+      # runner, and Git Bash mangles them.
+      run: bash ../../../scripts/write-desktop-env.sh ../.. "$ALLOOMI_REGION"
 
     - name: Enable customer variant flags
       # Manual-dispatch customer variant only. The flags are read from the
