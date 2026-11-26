@@ -53,10 +53,10 @@ on:
           - Alloomi_outlook_china
         default: Alloomi
       require_all_platforms:
-        description: 'Fail unless the run produced all five platform artifacts (macOS arm64/amd64, Linux amd64/arm64, Windows)'
+        description: 'Fail unless the run produced all five platform artifacts (macOS arm64/amd64, Linux amd64/arm64, Windows). On by default: the CN channel has no fallback source, so a manifest that advertises a version whose asset is missing leaves the clients of that platform with a 404 and no other place to look.'
         required: false
         type: boolean
-        default: false
+        default: true
       target:
         description: 'Where the release is published. "cos" uploads to the Tencent COS bucket; "box" publishes into the directory the CN box serves at download.alloomi.cn (used while the COS bucket cannot be created).'
         required: true
@@ -178,6 +178,13 @@ jobs:
           for f in "$STAGED"/*; do
             [ -f "$f" ] || continue
             name="$(basename "$f")"
+            # Only the build outputs are staged artifacts; anything else in
+            # the directory (a helper script, a checksum file) is skipped
+            # rather than counted as a published artifact.
+            case "$name" in
+              *.deb|*.dmg|*.exe) ;;
+              *) echo "skipping $name (not a build output)"; continue ;;
+            esac
             mkdir -p "dl/$name"
             cp "$f" "dl/$name/$name"
             echo "staged $name"
@@ -348,14 +355,19 @@ jobs:
             echo "ERROR: publish dir $PUBLISH_DIR does not exist on this host"
             exit 1
           fi
-          # The manifest is written first: it is the only thing the client
-          # reads to decide that an update exists, so a version that points at
-          # files that are not there yet would break every client.
-          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$PUBLISH_DIR/$MANIFEST"
+          # The assets go in first and the manifest is written last: the
+          # manifest is the only thing the client reads to decide that an
+          # update exists, so a version that points at files that are not
+          # there yet would break every client that checks in during the
+          # publish. The manifest is written to a temporary file and moved
+          # into place, so a reader never sees a half-written file.
           for f in artifacts/*; do
             install -m 644 "$f" "$PUBLISH_DIR/$(basename "$f")"
             echo "published $(basename "$f")"
           done
+          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$PUBLISH_DIR/$MANIFEST.tmp"
+          mv "$PUBLISH_DIR/$MANIFEST.tmp" "$PUBLISH_DIR/$MANIFEST"
+          echo "published $MANIFEST (version $VERSION)"
           ls -la "$PUBLISH_DIR"
 
       - name: Publish the channel manifest
