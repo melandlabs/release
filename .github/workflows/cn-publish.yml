@@ -65,6 +65,10 @@ on:
           - cos
           - box
         default: cos
+      staged_dir:
+        description: 'Directory on the CN box that already holds the built artifacts (box target only). The box reaches GitHub artifact storage at ~20 KB/s, so downloading 1.5 GB there would take days; scripts/stage-cn-artifacts.sh pushes the artifacts to the box instead and this input points the publish job at them.'
+        required: false
+        type: string
 
 env:
   # The filename convention must match what the updater constructs
@@ -114,6 +118,10 @@ jobs:
           echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
 
       - name: Download CI artifacts
+        # The box target can skip this: the box reaches GitHub's artifact
+        # storage at ~20 KB/s, so the artifacts are staged there by
+        # scripts/stage-cn-artifacts.sh instead (see the staged_dir input).
+        if: ${{ inputs.staged_dir == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -152,6 +160,33 @@ jobs:
           fi
           echo "downloaded $COUNT artifact(s):"
           find dl -type f | sed 's/^/  /'
+
+      - name: Stage the artifacts from the box
+        # The artifacts were pushed to the box by scripts/stage-cn-artifacts.sh
+        # instead of being downloaded here (the box gets ~20 KB/s from GitHub
+        # artifact storage). They are laid out like the downloaded ones, so
+        # the rename step below works on both paths unchanged.
+        if: ${{ inputs.staged_dir != '' }}
+        run: |
+          set -euo pipefail
+          STAGED="${{ inputs.staged_dir }}"
+          if [ ! -d "$STAGED" ]; then
+            echo "ERROR: staged dir $STAGED does not exist on this host"
+            exit 1
+          fi
+          COUNT=0
+          for f in "$STAGED"/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            mkdir -p "dl/$name"
+            cp "$f" "dl/$name/$name"
+            echo "staged $name"
+            COUNT=$((COUNT + 1))
+          done
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: no artifacts staged in $STAGED"
+            exit 1
+          fi
 
       - name: Rename artifacts to release filenames
         id: meta
