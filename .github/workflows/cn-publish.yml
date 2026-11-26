@@ -57,6 +57,14 @@ on:
         required: false
         type: boolean
         default: false
+      target:
+        description: 'Where the release is published. "cos" uploads to the Tencent COS bucket; "box" publishes into the directory the CN box serves at download.alloomi.cn (used while the COS bucket cannot be created).'
+        required: true
+        type: choice
+        options:
+          - cos
+          - box
+        default: cos
 
 env:
   # The filename convention must match what the updater constructs
@@ -68,7 +76,11 @@ env:
 
 jobs:
   publish-to-cos:
-    runs-on: ubuntu-22.04
+    # The "box" target publishes into the directory the CN box serves at
+    # download.alloomi.cn. That job has to run ON the box (it copies the
+    # artifacts into the served directory), so it uses the self-hosted runner
+    # registered there; the COS target keeps running on a hosted runner.
+    runs-on: ${{ inputs.target == 'box' && fromJSON('["self-hosted","linux","x64","cn-release"]') || 'ubuntu-22.04' }}
     permissions:
       # actions: read → list and download the artifacts of the source run.
       # contents: read → the artifacts API calls made with GITHUB_TOKEN.
@@ -243,6 +255,7 @@ jobs:
           fi
 
       - name: Upload artifacts to COS
+        if: ${{ inputs.target == 'cos' }}
         working-directory: artifacts
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
@@ -282,10 +295,39 @@ jobs:
             upload_one "$f"
           done
 
+      - name: Publish artifacts to the CN box
+        # The box target writes into the directory Caddy serves at
+        # download.alloomi.cn. This job runs on the box itself (the
+        # self-hosted "cn-release" runner), so there is no upload step: the
+        # artifacts are already local. The bucket is unreachable for now
+        # (no COS write credentials), but the client only needs the public
+        # origin to answer the manifest and the installer.
+        if: ${{ inputs.target == 'box' }}
+        env:
+          PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
+          MANIFEST: ${{ steps.names.outputs.manifest }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$PUBLISH_DIR" ]; then
+            echo "ERROR: publish dir $PUBLISH_DIR does not exist on this host"
+            exit 1
+          fi
+          # The manifest is written first: it is the only thing the client
+          # reads to decide that an update exists, so a version that points at
+          # files that are not there yet would break every client.
+          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$PUBLISH_DIR/$MANIFEST"
+          for f in artifacts/*; do
+            install -m 644 "$f" "$PUBLISH_DIR/$(basename "$f")"
+            echo "published $(basename "$f")"
+          done
+          ls -la "$PUBLISH_DIR"
+
       - name: Publish the channel manifest
         # The client reads the version out of this file and constructs the
         # asset name from it, so the manifest and the uploaded files have to
         # carry the same version string.
+        if: ${{ inputs.target == 'cos' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
@@ -302,6 +344,7 @@ jobs:
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}"
 
       - name: Verify the published files
+        if: ${{ inputs.target == 'cos' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
@@ -312,6 +355,16 @@ jobs:
           aws s3 ls "s3://${{ vars.CN_COS_BUCKET }}/" \
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}" \
             | grep "${{ steps.meta.outputs.version }}"
+
+      - name: Verify the published files on the box
+        if: ${{ inputs.target == 'box' }}
+        env:
+          PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -la "$PUBLISH_DIR"
+          ls "$PUBLISH_DIR" | grep "$VERSION"
 
       - name: Verify the public origin serves the manifest
         # The client fetches the manifest and the installer over plain HTTPS
@@ -330,13 +383,28 @@ jobs:
           echo "manifest: ${ORIGIN}/${MANIFEST}"
           curl -fsS "${ORIGIN}/${MANIFEST}"
           echo
-          # One asset, so a manifest that points at a file nobody uploaded
-          # cannot pass this step.
-          ASSET="${ORIGIN}/${PREFIX}${VERSION}_macOS_aarch64.dmg"
-          echo "asset: ${ASSET}"
-          code=$(curl -s -o /dev/null -w '%{http_code}' -I "$ASSET")
-          echo "HEAD ${ASSET} -> ${code}"
-          if [ "$code" != "200" ]; then
-            echo "ERROR: the published asset is not reachable at the public origin"
+          # Every published file has to be reachable, and the names have to be
+          # the ones the client constructs (<prefix>_<version>_<platform>).
+          # Checking the published set -- not one hard-coded asset -- keeps a
+          # partial publish honest: a manifest that points at files nobody
+          # uploaded cannot pass this step.
+          PUBLISHED=0
+          for f in artifacts/*; do
+            name="$(basename "$f")"
+            case "$name" in
+              "${PREFIX}${VERSION}_"*) ;;
+              *) echo "ERROR: published name '$name' does not match the client naming scheme"; exit 1 ;;
+            esac
+            code=$(curl -s -o /dev/null -w '%{http_code}' -I "${ORIGIN}/${name}")
+            echo "HEAD ${ORIGIN}/${name} -> ${code}"
+            if [ "$code" != "200" ]; then
+              echo "ERROR: the published asset is not reachable at the public origin"
+              exit 1
+            fi
+            PUBLISHED=$((PUBLISHED + 1))
+          done
+          if [ "$PUBLISHED" -lt 1 ]; then
+            echo "ERROR: nothing was published, so the origin proves nothing"
             exit 1
           fi
+          echo "verified $PUBLISHED published asset(s) at ${ORIGIN}"
