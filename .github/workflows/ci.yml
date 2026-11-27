@@ -716,7 +716,12 @@ jobs:
         # fine but cannot record.
         if: hashFiles('alloomi/apps/web/scripts/build-meeting-media.mjs') != ''
         run: |
-          RUNTIME="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app/Contents/Resources/resources/meeting-media"
+          APP_DIR_NAME="Alloomi.app"
+          # The CN bundle ships as "Alloomi CN.app" (different productName,
+          # same /Applications-level collision the per-region port fix
+          # addressed); ALLOOMI_REGION is the job env set at dispatch.
+          if [ "$ALLOOMI_REGION" = "cn" ]; then APP_DIR_NAME="Alloomi CN.app"; fi
+          RUNTIME="./alloomi/apps/web/src-tauri/target/release/bundle/macos/$APP_DIR_NAME/Contents/Resources/resources/meeting-media"
           test -x "$RUNTIME/bin/alloomi-meeting-media" && test -f "$RUNTIME/manifest.json"
           codesign --verify --strict --verbose=2 "$RUNTIME/bin/alloomi-meeting-media"
 
@@ -794,8 +799,13 @@ jobs:
       - name: Verify finalized app signatures
         if: env.SKIP_SIGNING != 'true'
         run: |
+          APP_DIR_NAME="Alloomi.app"
+          # The CN bundle ships as "Alloomi CN.app" (different productName,
+          # same /Applications-level collision the per-region port fix
+          # addressed); ALLOOMI_REGION is the job env set at dispatch.
+          if [ "$ALLOOMI_REGION" = "cn" ]; then APP_DIR_NAME="Alloomi CN.app"; fi
           set -e
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/$APP_DIR_NAME"
           codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
           echo "✅ App bundle signatures verified"
 
@@ -805,9 +815,14 @@ jobs:
           # to sign the DMG container itself.
           APPLE_SIGNING_IDENTITY: "${{ secrets.ED_APPLE_SIGNING_IDENTITY }}"
         run: |
+          APP_DIR_NAME="Alloomi.app"
+          # The CN bundle ships as "Alloomi CN.app" (different productName,
+          # same /Applications-level collision the per-region port fix
+          # addressed); ALLOOMI_REGION is the job env set at dispatch.
+          if [ "$ALLOOMI_REGION" = "cn" ]; then APP_DIR_NAME="Alloomi CN.app"; fi
           set -e
 
-          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/Alloomi.app"
+          APP_BUNDLE="./alloomi/apps/web/src-tauri/target/release/bundle/macos/$APP_DIR_NAME"
           DMG_DIR="./alloomi/apps/web/src-tauri/target/release/bundle/dmg"
           SRC_TAURI="./alloomi/apps/web/src-tauri"
           mkdir -p "$DMG_DIR"
