@@ -66,7 +66,7 @@ on:
           - box
         default: cos
       staged_dir:
-        description: 'Directory on the CN box that already holds the built artifacts (box target only). The box reaches GitHub artifact storage at ~20 KB/s, so downloading 1.5 GB there would take days; scripts/stage-cn-artifacts.sh pushes the artifacts to the box instead and this input points the publish job at them.'
+        description: 'Directory on the CN box that already holds the built artifacts. The box reaches GitHub artifact storage at ~20 KB/s, so downloading 1.5 GB there would take days; scripts/stage-cn-artifacts.sh pushes the artifacts to the box instead and this input points the publish job at them. Naming it also moves the job onto the box, which is what a COS publish needs: a hosted runner cannot upload to the Shanghai bucket fast enough.'
         required: false
         type: string
 
@@ -84,7 +84,15 @@ jobs:
     # download.alloomi.cn. That job has to run ON the box (it copies the
     # artifacts into the served directory), so it uses the self-hosted runner
     # registered there; the COS target keeps running on a hosted runner.
-    runs-on: ${{ inputs.target == 'box' && fromJSON('["self-hosted","linux","x64","cn-release"]') || 'ubuntu-22.04' }}
+    #
+    # A COS publish that names a staged_dir also runs on the box: the hosted
+    # runners in westus2 reached the Shanghai bucket at ~46 KB/s, which COS
+    # rejects with UserNetworkTooSlow on every part, so the upload never
+    # finished (run 45939750174, five attempts over 70 minutes). The box is
+    # inside the bucket's own region, so the same upload is an intra-region
+    # transfer. The hosted runner stays the default for a publish that has
+    # to download the CI artifacts itself.
+    runs-on: ${{ (inputs.target == 'box' || inputs.staged_dir != '') && fromJSON('["self-hosted","linux","x64","cn-release"]') || 'ubuntu-22.04' }}
     permissions:
       # actions: read → list and download the artifacts of the source run.
       # contents: read → the artifacts API calls made with GITHUB_TOKEN.
@@ -307,10 +315,11 @@ jobs:
           AWS_RETRY_MODE: adaptive
         run: |
           set -euo pipefail
-          # Path-style addressing: the virtual-host form would put the bucket
-          # name in front of the endpoint, and a bucket name with a dot in it
-          # breaks the TLS wildcard.
-          aws configure set default.s3.addressing_style path
+          # Virtual-host addressing: COS rejects path-style requests to this
+          # bucket outright (PathStyleDomainForbidden, seen from the box in
+          # run 45951284555). The bucket name carries no dot, so the
+          # virtual-host form cannot break the TLS wildcard.
+          aws configure set default.s3.addressing_style virtual
           aws configure set default.s3.multipart_threshold 64MB
           aws configure set default.s3.multipart_chunksize 16MB
           aws configure set default.s3.max_concurrent_requests 2
@@ -386,7 +395,7 @@ jobs:
           # Keep the exact 2-space-indent shape the intl bucket uses.
           printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$MANIFEST"
           cat "$MANIFEST"
-          aws configure set default.s3.addressing_style path
+          aws configure set default.s3.addressing_style virtual
           aws s3 cp "$MANIFEST" "s3://${{ vars.CN_COS_BUCKET }}/$MANIFEST" \
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}"
 
@@ -398,7 +407,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: true
         run: |
           set -euo pipefail
-          aws configure set default.s3.addressing_style path
+          aws configure set default.s3.addressing_style virtual
           aws s3 ls "s3://${{ vars.CN_COS_BUCKET }}/" \
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}" \
             | grep "${{ steps.meta.outputs.version }}"
