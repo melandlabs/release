@@ -313,6 +313,13 @@ jobs:
           AWS_EC2_METADATA_DISABLED: true
           AWS_MAX_ATTEMPTS: "10"
           AWS_RETRY_MODE: adaptive
+          # The AWS CLI v2 adds a trailing checksum to every request by
+          # default, which encodes the body with aws-chunked. COS rejects
+          # that: UploadPart fails with MissingContentLength because the
+          # part goes out without a Content-Length header. Turning the
+          # checksum off restores a plain body with a known length.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           set -euo pipefail
           # Virtual-host addressing: COS rejects path-style requests to this
@@ -350,9 +357,8 @@ jobs:
         # The box target writes into the directory Caddy serves at
         # download.alloomi.cn. This job runs on the box itself (the
         # self-hosted "cn-release" runner), so there is no upload step: the
-        # artifacts are already local. The bucket is unreachable for now
-        # (no COS write credentials), but the client only needs the public
-        # origin to answer the manifest and the installer.
+        # artifacts are already local. It stays the path the public origin
+        # serves from until the bucket is bound to download.alloomi.cn.
         if: ${{ inputs.target == 'box' }}
         env:
           PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
@@ -388,6 +394,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
           AWS_EC2_METADATA_DISABLED: true
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           set -euo pipefail
           MANIFEST="${{ steps.names.outputs.manifest }}"
@@ -405,6 +413,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
           AWS_EC2_METADATA_DISABLED: true
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           set -euo pipefail
           aws configure set default.s3.addressing_style virtual
