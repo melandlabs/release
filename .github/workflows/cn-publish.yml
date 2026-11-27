@@ -307,10 +307,12 @@ jobs:
           AWS_RETRY_MODE: adaptive
         run: |
           set -euo pipefail
-          # Path-style addressing: the virtual-host form would put the bucket
-          # name in front of the endpoint, and a bucket name with a dot in it
-          # breaks the TLS wildcard.
-          aws configure set default.s3.addressing_style path
+          # Virtual-host addressing, the only form COS accepts for bucket
+          # operations: a path-style request to cos.ap-shanghai.myqcloud.com
+          # is rejected with PathStyleDomainForbidden. The bucket name
+          # (alloomi-download-cn-1316129326) carries no dot, so the
+          # virtual-host form also stays inside the TLS wildcard.
+          aws configure set default.s3.addressing_style virtual
           aws configure set default.s3.multipart_threshold 64MB
           aws configure set default.s3.multipart_chunksize 16MB
           aws configure set default.s3.max_concurrent_requests 2
@@ -341,9 +343,8 @@ jobs:
         # The box target writes into the directory Caddy serves at
         # download.alloomi.cn. This job runs on the box itself (the
         # self-hosted "cn-release" runner), so there is no upload step: the
-        # artifacts are already local. The bucket is unreachable for now
-        # (no COS write credentials), but the client only needs the public
-        # origin to answer the manifest and the installer.
+        # artifacts are already local. It stays the path the public origin
+        # serves from until the bucket is bound to download.alloomi.cn.
         if: ${{ inputs.target == 'box' }}
         env:
           PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
@@ -386,7 +387,7 @@ jobs:
           # Keep the exact 2-space-indent shape the intl bucket uses.
           printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$MANIFEST"
           cat "$MANIFEST"
-          aws configure set default.s3.addressing_style path
+          aws configure set default.s3.addressing_style virtual
           aws s3 cp "$MANIFEST" "s3://${{ vars.CN_COS_BUCKET }}/$MANIFEST" \
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}"
 
@@ -398,7 +399,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: true
         run: |
           set -euo pipefail
-          aws configure set default.s3.addressing_style path
+          aws configure set default.s3.addressing_style virtual
           aws s3 ls "s3://${{ vars.CN_COS_BUCKET }}/" \
             --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}" \
             | grep "${{ steps.meta.outputs.version }}"
