@@ -1,0 +1,457 @@
+name: Publish CN Release Artifacts to COS
+
+# Publishes a CN desktop build to the Tencent COS bucket that backs
+# https://download.alloomi.cn, and writes the channel manifest the CN updater
+# reads.
+#
+# The CN client has no fallback: apps/web/src-tauri/src/update.rs
+# (do_check_for_update_for_region) reads release.json / release-beta.json /
+# release-nightly.json from DEFAULT_UPDATE_ORIGIN_CN and downloads
+# <prefix>_<version>_<platform> from the same origin, and it never looks at
+# the international R2 bucket or a GitHub Release. A CN release that does not
+# land in this bucket is invisible to every installed CN client, so this
+# workflow is the last step of a CN release and nothing may be skipped in it.
+#
+# The bucket is public-read: the updater fetches the manifest and the
+# installer without credentials.
+#
+# Manual only, and the source run id is mandatory. A CN run is dispatched
+# from ci.yml with alloomi_region=cn, and no "latest successful run"
+# heuristic can tell a CN run from an international one — the two produce
+# artifacts with the same names.
+#
+# Credentials: COS_SECRET_ID / COS_SECRET_KEY (the Tencent Cloud API key pair
+# with write access to the bucket). The bucket, its region and the public
+# origin are repository variables.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'CI run id of the cn build (ci.yml dispatched with alloomi_region=cn)'
+        required: true
+        type: string
+      version:
+        description: 'Version to publish (optional, defaults to the version carried by the artifacts)'
+        required: false
+        type: string
+      channel:
+        description: 'Which channel manifest to write. The client reads release.json (stable), release-beta.json (beta) and release-nightly.json (nightly) from the same origin.'
+        required: true
+        type: choice
+        options:
+          - stable
+          - beta
+          - nightly
+        default: stable
+      prefix:
+        description: 'Asset name prefix baked into the client bundle, without the trailing separator. The standard CN client asks for Alloomi_<version>_...; the Outlook China (21Vianet) tenant build asks for Alloomi_outlook_china_<version>_... (the separator is added by the workflow)'
+        required: true
+        type: choice
+        options:
+          - Alloomi
+          - Alloomi_outlook_china
+        default: Alloomi
+      require_all_platforms:
+        description: 'Fail unless the run produced all five platform artifacts (macOS arm64/amd64, Linux amd64/arm64, Windows). On by default: the CN channel has no fallback source, so a manifest that advertises a version whose asset is missing leaves the clients of that platform with a 404 and no other place to look.'
+        required: false
+        type: boolean
+        default: true
+      target:
+        description: 'Where the release is published. "cos" uploads to the Tencent COS bucket; "box" publishes into the directory the CN box serves at download.alloomi.cn (used while the COS bucket cannot be created).'
+        required: true
+        type: choice
+        options:
+          - cos
+          - box
+        default: cos
+      staged_dir:
+        description: 'Directory on the CN box that already holds the built artifacts (box target only). The box reaches GitHub artifact storage at ~20 KB/s, so downloading 1.5 GB there would take days; scripts/stage-cn-artifacts.sh pushes the artifacts to the box instead and this input points the publish job at them.'
+        required: false
+        type: string
+
+env:
+  # The filename convention must match what the updater constructs
+  # (apps/web/src-tauri/src/update.rs get_platform_download_filename): macOS
+  # aarch64/amd64, linux aarch64/amd64, windows amd64. The prefix and the
+  # version come from the client itself, so a mismatch here is a 404 on the
+  # user's machine, not an error here.
+  COS_ENDPOINT: https://cos.${{ vars.CN_COS_REGION }}.myqcloud.com
+
+jobs:
+  publish-to-cos:
+    # The "box" target publishes into the directory the CN box serves at
+    # download.alloomi.cn. That job has to run ON the box (it copies the
+    # artifacts into the served directory), so it uses the self-hosted runner
+    # registered there; the COS target keeps running on a hosted runner.
+    runs-on: ${{ inputs.target == 'box' && fromJSON('["self-hosted","linux","x64","cn-release"]') || 'ubuntu-22.04' }}
+    permissions:
+      # actions: read → list and download the artifacts of the source run.
+      # contents: read → the artifacts API calls made with GITHUB_TOKEN.
+      actions: read
+      contents: read
+    steps:
+      - name: Resolve names
+        id: names
+        run: |
+          set -euo pipefail
+          case "${{ inputs.channel }}" in
+            stable)  MANIFEST=release.json ;;
+            beta)    MANIFEST=release-beta.json ;;
+            nightly) MANIFEST=release-nightly.json ;;
+            *) echo "ERROR: unknown channel '${{ inputs.channel }}'"; exit 1 ;;
+          esac
+          echo "manifest=$MANIFEST" >> $GITHUB_OUTPUT
+          # The client asks for `<prefix>_<version>_<platform>` -- see
+          # get_platform_download_filename() in apps/web/src-tauri/src/update.rs,
+          # which formats "{prefix}_{version}_{platform}". The input carries
+          # the prefix the client baked into its bundle ("Alloomi" /
+          # "Alloomi_outlook_china", apps/web/lib/tauri.ts), so the separator
+          # has to be added here -- publishing "Alloomi0.6.17_..." would name
+          # an object the client never requests.
+          PREFIX="${{ inputs.prefix }}"
+          case "$PREFIX" in
+            *_ ) ;;
+            *  ) PREFIX="${PREFIX}_" ;;
+          esac
+          echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
+          echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
+
+      - name: Download CI artifacts
+        # The box target can skip this: the box reaches GitHub's artifact
+        # storage at ~20 KB/s, so the artifacts are staged there by
+        # scripts/stage-cn-artifacts.sh instead (see the staged_dir input).
+        if: ${{ inputs.staged_dir == '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          RUN_ID="${{ inputs.source_run_id }}"
+
+          # The CI artifacts are uploaded with `archive: false` (see the
+          # "Upload CI ..." steps in ci.yml): GitHub stores the build output
+          # as-is and serves it raw, with no zip wrapped around it.
+          # `gh run download` cannot read those -- it unzips whatever the
+          # artifacts API returns and fails with "not a valid zip file" on
+          # a raw file. The artifacts API answers with a redirect to the
+          # blob storage URL of the file itself, so follow that redirect.
+          #
+          # No -e: a failed download must not abort the loop, the missing
+          # files are tallied in the rename step below.
+          COUNT=0
+          while IFS=$'\t' read -r id name; do
+            [ -n "$name" ] || continue
+            echo "downloading artifact $name (id $id)"
+            mkdir -p "dl/$name"
+            if ! curl -fsSL \
+                 -H "Authorization: token $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip" \
+                 -o "dl/$name/$name"; then
+              echo "WARN: artifact $name could not be downloaded"
+              continue
+            fi
+            COUNT=$((COUNT+1))
+          done <<< "$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts" --paginate --jq '.artifacts[] | [.id, .name] | @tsv')"
+
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: no artifacts downloaded from run $RUN_ID. Is it a cn run (alloomi_region=cn)?"
+            exit 1
+          fi
+          echo "downloaded $COUNT artifact(s):"
+          find dl -type f | sed 's/^/  /'
+
+      - name: Stage the artifacts from the box
+        # The artifacts were pushed to the box by scripts/stage-cn-artifacts.sh
+        # instead of being downloaded here (the box gets ~20 KB/s from GitHub
+        # artifact storage). They are laid out like the downloaded ones, so
+        # the rename step below works on both paths unchanged.
+        if: ${{ inputs.staged_dir != '' }}
+        run: |
+          set -euo pipefail
+          STAGED="${{ inputs.staged_dir }}"
+          if [ ! -d "$STAGED" ]; then
+            echo "ERROR: staged dir $STAGED does not exist on this host"
+            exit 1
+          fi
+          COUNT=0
+          for f in "$STAGED"/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            # Only the build outputs are staged artifacts; anything else in
+            # the directory (a helper script, a checksum file) is skipped
+            # rather than counted as a published artifact.
+            case "$name" in
+              *.deb|*.dmg|*.exe) ;;
+              *) echo "skipping $name (not a build output)"; continue ;;
+            esac
+            mkdir -p "dl/$name"
+            cp "$f" "dl/$name/$name"
+            echo "staged $name"
+            COUNT=$((COUNT + 1))
+          done
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: no artifacts staged in $STAGED"
+            exit 1
+          fi
+
+      - name: Rename artifacts to release filenames
+        id: meta
+        run: |
+          set -euo pipefail
+          PREFIX="${{ steps.names.outputs.prefix }}"
+
+          # Derive the version from whatever artifact is available: tauri
+          # names files alloomi_<version>_{amd64,arm64}.deb and
+          # alloomi_<version>_x64-setup.exe (stable 0.6.7 or nightly
+          # 0.6.8-nightly.20261010). The DMGs are renamed to
+          # Alloomi_ci_<commit-sha>_{aarch64,x64}.dmg and carry no version,
+          # so they are only the last resort.
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            ANY=$(find dl -type f \( -name '*.deb' -o -name '*.exe' \) | head -n1 || true)
+            [ -n "$ANY" ] || ANY=$(find dl -type f -name '*.dmg' | head -n1 || true)
+            BASE=$(basename "$ANY")
+            BASE="${BASE#alloomi_}"; BASE="${BASE#Alloomi_}"
+            VERSION=$(echo "$BASE" | sed -E 's/\.(deb|dmg|exe)$//; s/_(amd64|arm64|aarch64|x64)(-setup)?$//')
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: could not derive a version; pass the version input explicitly."
+            exit 1
+          fi
+          case "$VERSION" in
+            ci_*)
+              # Only the DMGs are there, and their file names carry a commit
+              # sha rather than a version.
+              echo "ERROR: no version in the artifact file names; pass the version input explicitly."
+              exit 1
+              ;;
+          esac
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing CN version: $VERSION (prefix $PREFIX)"
+
+          mkdir -p artifacts
+          # <file name glob> <published name>. The artifacts are raw files
+          # named after the build output, so the platform is identified by
+          # the arch suffix of the file name.
+          rename() {
+            local src
+            # || true: with pipefail, find on a dir this run didn't produce
+            # would otherwise abort the whole step -- a missing artifact is
+            # legal unless require_all_platforms says otherwise.
+            src=$(find dl -type f -name "$1" 2>/dev/null | head -n1 || true)
+            if [ -z "$src" ]; then
+              echo "MISSING: no artifact matching $1"
+              return 1
+            fi
+            mv "$src" "artifacts/$2"
+            echo "renamed: $2"
+            return 0
+          }
+          FOUND=0
+          MISSING=""
+          publish() {
+            if rename "$1" "$2"; then
+              FOUND=$((FOUND+1))
+            else
+              MISSING="$MISSING $1"
+            fi
+          }
+          publish '*_aarch64.dmg' "${PREFIX}${VERSION}_macOS_aarch64.dmg"
+          publish '*_x64.dmg'     "${PREFIX}${VERSION}_macOS_amd64.dmg"
+          publish '*_amd64.deb'   "${PREFIX}${VERSION}_linux_amd64.deb"
+          publish '*_arm64.deb'   "${PREFIX}${VERSION}_linux_aarch64.deb"
+          publish '*setup.exe'    "${PREFIX}${VERSION}_windows_amd64.exe"
+          echo "found $FOUND artifact(s); missing:$MISSING"
+
+          if [ "${{ inputs.require_all_platforms }}" = "true" ] && [ "$FOUND" -ne 5 ]; then
+            echo "ERROR: this publish requires the full 5-artifact set; missing:$MISSING"
+            exit 1
+          fi
+          if [ "$FOUND" -lt 1 ]; then
+            echo "ERROR: nothing to publish"
+            exit 1
+          fi
+          ls -la artifacts/
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          PREFIX="${{ steps.names.outputs.prefix }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          COUNT=$(ls artifacts | wc -l)
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: nothing to publish"
+            exit 1
+          fi
+          # Guard against publishing a build whose embedded version does not
+          # match the filename version (same check as the release branch).
+          # Only possible when the linux amd64 deb is part of this publish.
+          if [ -f "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" ]; then
+            DEB_VER=$(dpkg-deb -I "artifacts/${PREFIX}${VERSION}_linux_amd64.deb" | awk '$1 == "Version:" { print $2 }')
+            echo "deb control version: $DEB_VER"
+            if [ "$DEB_VER" != "$VERSION" ]; then
+              echo "ERROR: artifact version mismatch! Expected $VERSION, got $DEB_VER"
+              exit 1
+            fi
+          fi
+
+      - name: Upload artifacts to COS
+        if: ${{ inputs.target == 'cos' }}
+        working-directory: artifacts
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: adaptive
+        run: |
+          set -euo pipefail
+          # Path-style addressing: the virtual-host form would put the bucket
+          # name in front of the endpoint, and a bucket name with a dot in it
+          # breaks the TLS wildcard.
+          aws configure set default.s3.addressing_style path
+          aws configure set default.s3.multipart_threshold 64MB
+          aws configure set default.s3.multipart_chunksize 16MB
+          aws configure set default.s3.max_concurrent_requests 2
+          aws configure set default.s3.max_bandwidth 50MB/s
+          upload_one() {
+            local f="$1"
+            local attempt=1
+            local max=5
+            while true; do
+              echo "upload $f (attempt $attempt/$max)"
+              if aws s3 cp "$f" "s3://${{ vars.CN_COS_BUCKET }}/$f" \
+                  --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}"; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max" ]; then
+                echo "ERROR: failed to upload $f after $max attempts"
+                return 1
+              fi
+              sleep $((attempt * 8))
+              attempt=$((attempt + 1))
+            done
+          }
+          for f in *; do
+            upload_one "$f"
+          done
+
+      - name: Publish artifacts to the CN box
+        # The box target writes into the directory Caddy serves at
+        # download.alloomi.cn. This job runs on the box itself (the
+        # self-hosted "cn-release" runner), so there is no upload step: the
+        # artifacts are already local. The bucket is unreachable for now
+        # (no COS write credentials), but the client only needs the public
+        # origin to answer the manifest and the installer.
+        if: ${{ inputs.target == 'box' }}
+        env:
+          PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
+          MANIFEST: ${{ steps.names.outputs.manifest }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$PUBLISH_DIR" ]; then
+            echo "ERROR: publish dir $PUBLISH_DIR does not exist on this host"
+            exit 1
+          fi
+          # The assets go in first and the manifest is written last: the
+          # manifest is the only thing the client reads to decide that an
+          # update exists, so a version that points at files that are not
+          # there yet would break every client that checks in during the
+          # publish. The manifest is written to a temporary file and moved
+          # into place, so a reader never sees a half-written file.
+          for f in artifacts/*; do
+            install -m 644 "$f" "$PUBLISH_DIR/$(basename "$f")"
+            echo "published $(basename "$f")"
+          done
+          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$PUBLISH_DIR/$MANIFEST.tmp"
+          mv "$PUBLISH_DIR/$MANIFEST.tmp" "$PUBLISH_DIR/$MANIFEST"
+          echo "published $MANIFEST (version $VERSION)"
+          ls -la "$PUBLISH_DIR"
+
+      - name: Publish the channel manifest
+        # The client reads the version out of this file and constructs the
+        # asset name from it, so the manifest and the uploaded files have to
+        # carry the same version string.
+        if: ${{ inputs.target == 'cos' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          set -euo pipefail
+          MANIFEST="${{ steps.names.outputs.manifest }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          # Keep the exact 2-space-indent shape the intl bucket uses.
+          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$MANIFEST"
+          cat "$MANIFEST"
+          aws configure set default.s3.addressing_style path
+          aws s3 cp "$MANIFEST" "s3://${{ vars.CN_COS_BUCKET }}/$MANIFEST" \
+            --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}"
+
+      - name: Verify the published files
+        if: ${{ inputs.target == 'cos' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.COS_SECRET_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.COS_SECRET_KEY }}
+          AWS_EC2_METADATA_DISABLED: true
+        run: |
+          set -euo pipefail
+          aws configure set default.s3.addressing_style path
+          aws s3 ls "s3://${{ vars.CN_COS_BUCKET }}/" \
+            --endpoint-url "$COS_ENDPOINT" --region "${{ vars.CN_COS_REGION }}" \
+            | grep "${{ steps.meta.outputs.version }}"
+
+      - name: Verify the published files on the box
+        if: ${{ inputs.target == 'box' }}
+        env:
+          PUBLISH_DIR: ${{ vars.CN_PUBLISH_DIR || '/opt/oo/downloads' }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -la "$PUBLISH_DIR"
+          ls "$PUBLISH_DIR" | grep "$VERSION"
+
+      - name: Verify the public origin serves the manifest
+        # The client fetches the manifest and the installer over plain HTTPS
+        # from the public origin, without credentials. The bucket listing
+        # above only proves the objects exist; this proves the origin can
+        # reach them.
+        if: ${{ vars.CN_DOWNLOAD_ORIGIN != '' }}
+        env:
+          MANIFEST: ${{ steps.names.outputs.manifest }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PREFIX: ${{ steps.names.outputs.prefix }}
+          ORIGIN: ${{ vars.CN_DOWNLOAD_ORIGIN }}
+        run: |
+          set -euo pipefail
+          ORIGIN="${ORIGIN%/}"
+          echo "manifest: ${ORIGIN}/${MANIFEST}"
+          curl -fsS "${ORIGIN}/${MANIFEST}"
+          echo
+          # Every published file has to be reachable, and the names have to be
+          # the ones the client constructs (<prefix>_<version>_<platform>).
+          # Checking the published set -- not one hard-coded asset -- keeps a
+          # partial publish honest: a manifest that points at files nobody
+          # uploaded cannot pass this step.
+          PUBLISHED=0
+          for f in artifacts/*; do
+            name="$(basename "$f")"
+            case "$name" in
+              "${PREFIX}${VERSION}_"*) ;;
+              *) echo "ERROR: published name '$name' does not match the client naming scheme"; exit 1 ;;
+            esac
+            code=$(curl -s -o /dev/null -w '%{http_code}' -I "${ORIGIN}/${name}")
+            echo "HEAD ${ORIGIN}/${name} -> ${code}"
+            if [ "$code" != "200" ]; then
+              echo "ERROR: the published asset is not reachable at the public origin"
+              exit 1
+            fi
+            PUBLISHED=$((PUBLISHED + 1))
+          done
+          if [ "$PUBLISHED" -lt 1 ]; then
+            echo "ERROR: nothing was published, so the origin proves nothing"
+            exit 1
+          fi
+          echo "verified $PUBLISHED published asset(s) at ${ORIGIN}"
