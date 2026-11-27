@@ -850,7 +850,10 @@ jobs:
           popd >/dev/null
 
           VERSION=$(node -p "require('./alloomi/apps/web/src-tauri/tauri.conf.json').version")
-          BEAUTIFIED_DMG="$DMG_DIR/Alloomi_${VERSION}_aarch64.dmg"
+          # The .app (and therefore the DMG name) follows the bundle's
+          # productName: "Alloomi CN" on cn builds (see alloomi #4967).
+          APP_NAME="${APP_DIR_NAME%.app}"
+          BEAUTIFIED_DMG="$DMG_DIR/${APP_NAME}_${VERSION}_aarch64.dmg"
 
           if [ ! -f "$BEAUTIFIED_DMG" ]; then
             echo "❌ Beautified DMG not found: $BEAUTIFIED_DMG"
