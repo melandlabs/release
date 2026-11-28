@@ -13,7 +13,7 @@ on:
         required: false
         type: string
       enable_outlook_china:
-        description: 'Build the Outlook (21Vianet) customer variant: appends NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1 and NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1 to the bundled .env and suffixes every artifact name with -outlook-china'
+        description: 'Build the international Outlook (21Vianet) customer variant: appends NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1 (the cn region already carries it) and NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1 to the bundled .env'
         required: false
         type: boolean
         default: false
@@ -379,10 +379,21 @@ jobs:
         # Manual-dispatch customer variant only. The flags are read from the
         # .env that ships inside the bundle, so they must live in the file, not
         # just in the build process environment.
+        #
+        # NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA is the Outlook (21Vianet) connector
+        # switch. The cn region sets it by itself; this step is what puts it
+        # into an international build.
         if: inputs.enable_outlook_china
         working-directory: ./alloomi/apps/web
         run: |
-          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          # The cn region already carries NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA --
+          # the Outlook China connector ships in the China distribution (see
+          # scripts/write-desktop-env.sh). Only the international customer
+          # variant adds it here; writing it twice would leave two identical
+          # lines in the file that ships inside the bundle.
+          if [ "$ALLOOMI_REGION" != "cn" ]; then
+            echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          fi
           echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
       - name: Prepare Apple signing identity
@@ -1374,10 +1385,21 @@ jobs:
         # Manual-dispatch customer variant only. The flags are read from the
         # .env that ships inside the bundle, so they must live in the file, not
         # just in the build process environment.
+        #
+        # NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA is the Outlook (21Vianet) connector
+        # switch. The cn region sets it by itself; this step is what puts it
+        # into an international build.
         if: inputs.enable_outlook_china
         working-directory: ./alloomi/apps/web
         run: |
-          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          # The cn region already carries NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA --
+          # the Outlook China connector ships in the China distribution (see
+          # scripts/write-desktop-env.sh). Only the international customer
+          # variant adds it here; writing it twice would leave two identical
+          # lines in the file that ships inside the bundle.
+          if [ "$ALLOOMI_REGION" != "cn" ]; then
+            echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+          fi
           echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
       - name: Prepare Apple signing identity
@@ -2106,10 +2128,21 @@ jobs:
       # Manual-dispatch customer variant only. The flags are read from the
       # .env that ships inside the bundle, so they must live in the file, not
       # just in the build process environment.
+      #
+      # NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA is the Outlook (21Vianet) connector
+      # switch. The cn region sets it by itself; this step is what puts it
+      # into an international build.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
       run: |
-        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        # The cn region already carries NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA --
+        # the Outlook China connector ships in the China distribution (see
+        # scripts/write-desktop-env.sh). Only the international customer
+        # variant adds it here; writing it twice would leave two identical
+        # lines in the file that ships inside the bundle.
+        if [ "$ALLOOMI_REGION" != "cn" ]; then
+          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        fi
         echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip AppImage on Linux
@@ -2485,11 +2518,22 @@ jobs:
       # Manual-dispatch customer variant only. The flags are read from the
       # .env that ships inside the bundle, so they must live in the file, not
       # just in the build process environment.
+      #
+      # NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA is the Outlook (21Vianet) connector
+      # switch. The cn region sets it by itself; this step is what puts it
+      # into an international build.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
       shell: bash
       run: |
-        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        # The cn region already carries NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA --
+        # the Outlook China connector ships in the China distribution (see
+        # scripts/write-desktop-env.sh). Only the international customer
+        # variant adds it here; writing it twice would leave two identical
+        # lines in the file that ships inside the bundle.
+        if [ "$ALLOOMI_REGION" != "cn" ]; then
+          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        fi
         echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip MSI on Windows
@@ -2848,10 +2892,21 @@ jobs:
       # Manual-dispatch customer variant only. The flags are read from the
       # .env that ships inside the bundle, so they must live in the file, not
       # just in the build process environment.
+      #
+      # NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA is the Outlook (21Vianet) connector
+      # switch. The cn region sets it by itself; this step is what puts it
+      # into an international build.
       if: inputs.enable_outlook_china
       working-directory: ./alloomi/apps/web
       run: |
-        echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        # The cn region already carries NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA --
+        # the Outlook China connector ships in the China distribution (see
+        # scripts/write-desktop-env.sh). Only the international customer
+        # variant adds it here; writing it twice would leave two identical
+        # lines in the file that ships inside the bundle.
+        if [ "$ALLOOMI_REGION" != "cn" ]; then
+          echo "NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1" >> .env
+        fi
         echo "NEXT_PUBLIC_ENABLE_AGENT_IMPORT=1" >> .env
 
     - name: Patch tauri.conf.* to skip AppImage on Linux ARM64
