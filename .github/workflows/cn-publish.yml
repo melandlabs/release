@@ -45,7 +45,7 @@ on:
           - nightly
         default: stable
       prefix:
-        description: 'Asset name prefix baked into the client bundle, without the trailing separator. The standard CN client asks for Alloomi_<version>_...; the Outlook China (21Vianet) tenant build asks for Alloomi_outlook_china_<version>_... (the separator is added by the workflow)'
+        description: 'Asset name prefix baked into the client bundle, without the trailing separator. The China distribution asks for Alloomi_<version>_... — it ships the Outlook China connector, but the prefix names the distribution, not the connector, and this channel publishes the standard set (apps/web/lib/desktop/update/asset-prefix.ts). Alloomi_outlook_china_<version>_... is the international customer variant''s set, which lives on the international channel (the separator is added by the workflow)'
         required: true
         type: choice
         options:
@@ -114,9 +114,10 @@ jobs:
           # get_platform_download_filename() in apps/web/src-tauri/src/update.rs,
           # which formats "{prefix}_{version}_{platform}". The input carries
           # the prefix the client baked into its bundle ("Alloomi" /
-          # "Alloomi_outlook_china", apps/web/lib/tauri.ts), so the separator
-          # has to be added here -- publishing "Alloomi0.6.17_..." would name
-          # an object the client never requests.
+          # "Alloomi_outlook_china", apps/web/lib/desktop/update/asset-prefix.ts),
+          # so the separator has to be added here -- publishing
+          # "Alloomi0.6.17_..." would name an object the client never
+          # requests.
           PREFIX="${{ inputs.prefix }}"
           case "$PREFIX" in
             *_ ) ;;

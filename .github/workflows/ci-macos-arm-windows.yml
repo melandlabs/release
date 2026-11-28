@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       enable_outlook_china:
-        description: 'Build the Outlook (21Vianet) customer variant'
+        description: 'Build the international Outlook (21Vianet) customer variant'
         required: false
         type: boolean
         default: false
