@@ -37,6 +37,12 @@
 # shipping a provider model id or a key in the bundle would be wrong. There is
 # no image model on the cn gateway yet; the images route reports that instead
 # of guessing a provider.
+#
+# Set here for cn: NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1. The Outlook China
+# (21Vianet) connector is part of the China distribution, so every cn build
+# ships the connector tile. The switch is read at build time (Next.js inlines
+# NEXT_PUBLIC_* into the browser bundle), which is why it lives in this file
+# and not in the workflow environment.
 set -euo pipefail
 
 REPO="${1:-alloomi}"
@@ -84,6 +90,16 @@ TELEGRAM_MODE=pooling
 ANTHROPIC_BASE_URL=http://localhost:3415/api/ai
 API_TIMEOUT_MS=3000000
 IS_TAURI=true
+
+# The Outlook China (21Vianet) connector ships in the China distribution:
+# every cn build surfaces the connector tile. Next.js inlines NEXT_PUBLIC_*
+# at build time, so the switch has to live in this file -- the one that ships
+# inside the bundle and that the packaged server reads at runtime.
+#
+# It does NOT change the updater's asset prefix (apps/web/lib/tauri.ts): the
+# cn update channel publishes the standard Alloomi_* set and this build
+# downloads from that channel.
+NEXT_PUBLIC_ENABLE_OUTLOOK_CHINA=1
 
 EOF
     ;;
